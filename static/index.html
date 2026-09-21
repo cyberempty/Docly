@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docly</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📝</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="brand"><span class="brand-mark">✎</span><span class="brand-name">Docly</span></div>
+      <div class="header-actions">
+        <button id="helpBtn" class="icon-btn" title="Help (F1)">?</button>
+        <button id="themeToggle" class="icon-btn" title="Toggle light/dark theme">☾</button>
+      </div>
+    </div>
+
+    <div class="search-box">
+      <span class="search-icon">⌕</span>
+      <input id="searchInput" type="text" placeholder="Search documents, notes, tags…" autocomplete="off">
+    </div>
+
+    <div class="new-doc-wrap">
+      <button id="newDocBtn" class="new-doc-btn">+ New document</button>
+    </div>
+
+    <nav class="filters">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="recent">Recent</button>
+      <button class="filter-btn" data-filter="favorites">Favorites</button>
+    </nav>
+
+    <div id="docList" class="doc-list"></div>
+
+    <div class="sidebar-footer">
+      <span id="docCount">0 documents</span>
+    </div>
+  </aside>
+
+  <main class="editor-area">
+    <div id="emptyState" class="empty-state">
+      <div class="empty-mark">✎</div>
+      <h2>Welcome to Docly</h2>
+      <p>Your local notepad. Select a note from the sidebar or create a new one to get started.</p>
+    </div>
+
+    <div id="editorWrap" class="editor-wrap hidden">
+      <header class="editor-header">
+        <div class="editor-header-top">
+          <input id="titleInput" class="title-input" placeholder="Untitled" autocomplete="off">
+          <div class="editor-header-actions">
+            <span id="saveStatus" class="save-status">Saved</span>
+            <button id="favBtn" class="icon-btn" title="Add to favorites">☆</button>
+            <button id="deleteBtn" class="icon-btn danger" title="Delete document">✕</button>
+          </div>
+        </div>
+        <div id="tagsRow" class="tags-row">
+          <div id="tagsList" class="tags-list"></div>
+          <input id="tagInput" class="tag-input" placeholder="+ add tag and press Enter">
+        </div>
+      </header>
+
+      <div id="toolbar" class="toolbar">
+        <select id="blockSelect" class="toolbar-select" title="Paragraph style">
+          <option value="P">Text</option>
+          <option value="H1">Heading 1</option>
+          <option value="H2">Heading 2</option>
+          <option value="H3">Heading 3</option>
+          <option value="BLOCKQUOTE">Quote</option>
+        </select>
+        <span class="toolbar-sep"></span>
+        <button data-cmd="bold" class="tb-btn tb-bold" title="Bold (Ctrl+B)"><b>B</b></button>
+        <button data-cmd="italic" class="tb-btn tb-italic" title="Italic (Ctrl+I)"><i>I</i></button>
+        <button data-cmd="underline" class="tb-btn tb-underline" title="Underline (Ctrl+U)"><u>U</u></button>
+        <button data-cmd="strikeThrough" class="tb-btn tb-strike" title="Strikethrough"><s>S</s></button>
+        <span class="toolbar-sep"></span>
+        <button id="fontSizeUp" class="tb-btn" title="Increase font size">A<span style="font-size:0.65em;vertical-align:super">+</span></button>
+        <button id="fontSizeDown" class="tb-btn" title="Decrease font size">A<span style="font-size:0.65em;vertical-align:super">−</span></button>
+        <input type="number" id="fontSizeInput" class="toolbar-input" min="8" max="72" value="16" title="Font size in pixels">
+        <button id="fontSizeSet" class="tb-btn" title="Set font size">✓</button>
+        <button id="textColorBtn" class="tb-btn" title="Text color"><span style="color:var(--accent)">A</span></button>
+        <button id="highlightBtn" class="tb-btn" title="Highlight"><span style="background:#ffe066;color:#000;padding:0 3px;border-radius:2px">A</span></button>
+        <span class="toolbar-sep"></span>
+        <button data-cmd="superscript" class="tb-btn" title="Superscript">x<sup>2</sup></button>
+        <button data-cmd="subscript" class="tb-btn" title="Subscript">x<sub>1</sub></button>
+        <button id="caseBtn" class="tb-btn" title="Change case">Aa</button>
+        <span class="toolbar-sep"></span>
+        <button data-cmd="insertUnorderedList" class="tb-btn" title="Bullet list">≡</button>
+        <button data-cmd="insertOrderedList" class="tb-btn" title="Numbered list">1.</button>
+        <span class="toolbar-sep"></span>
+        <button data-cmd="justifyLeft" class="tb-btn" title="Align left (Ctrl+L)">⇤</button>
+        <button data-cmd="justifyCenter" class="tb-btn" title="Center (Ctrl+E)">⇔</button>
+        <button data-cmd="justifyRight" class="tb-btn" title="Align right (Ctrl+R)">⇥</button>
+        <button data-cmd="justifyFull" class="tb-btn" title="Justify (Ctrl+J)">☰</button>
+        <span class="toolbar-sep"></span>
+        <button data-cmd="outdent" class="tb-btn" title="Decrease indent">←</button>
+        <button data-cmd="indent" class="tb-btn" title="Increase indent">→</button>
+        <span class="toolbar-sep"></span>
+        <button id="lineSpacing1" class="tb-btn" title="Single line spacing (Ctrl+1)">1</button>
+        <button id="lineSpacing15" class="tb-btn" title="1.5 line spacing (Ctrl+5)">1.5</button>
+        <button id="lineSpacing2" class="tb-btn" title="Double line spacing (Ctrl+2)">2</button>
+        <span class="toolbar-sep"></span>
+        <button id="linkBtn" class="tb-btn" title="Insert link">∞</button>
+        <button id="codeBtn" class="tb-btn" title="Code block">{ }</button>
+        <button id="tableBtn" class="tb-btn" title="Insert table">⊞</button>
+        <button id="imageBtn" class="tb-btn" title="Insert image">IMG</button>
+        <span class="toolbar-sep"></span>
+        <button id="undoBtn" class="tb-btn" title="Undo (Ctrl+Z)">↶</button>
+        <button id="redoBtn" class="tb-btn" title="Redo (Ctrl+Y)">↷</button>
+        <span class="toolbar-sep"></span>
+        <button id="exportTxt" class="tb-btn" title="Export as TXT">TXT</button>
+        <button id="exportHtml" class="tb-btn" title="Export as HTML">HTML</button>
+        <button id="exportPdf" class="tb-btn" title="Export as PDF">PDF</button>
+      </div>
+
+      <div id="richEditor" class="rich-editor" contenteditable="true" spellcheck="true"></div>
+    </div>
+  </main>
+</div>
+
+<input type="file" id="imageInput" accept="image/*" class="hidden">
+<div id="toast" class="toast hidden"></div>
+
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div id="modal" class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Modal</h3>
+      <button id="modalClose" class="modal-close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="modalMessage"></p>
+      <input type="text" id="modalInput" class="modal-input hidden">
+      <input type="text" id="modalInput2" class="modal-input hidden">
+      <div id="modalButtons" class="modal-buttons hidden">
+        <button id="modalCancel" class="modal-btn modal-btn-cancel">Cancel</button>
+        <button id="modalOk" class="modal-btn modal-btn-ok">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
