@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,20 +12,27 @@
 
   <aside class="sidebar">
     <div class="sidebar-header">
-      <div class="brand"><span class="brand-mark">✎</span><span class="brand-name">Docly</span></div>
+      <div class="brand">
+        <span class="brand-mark">✎</span>
+        <span class="brand-name">Docly</span>
+      </div>
       <div class="header-actions">
-        <button id="helpBtn" class="icon-btn" title="Help (F1)">?</button>
-        <button id="themeToggle" class="icon-btn" title="Toggle light/dark theme">☾</button>
+        <button id="helpBtn" class="icon-btn" title="Help (F1)">
+          <svg viewBox="0 0 24 24"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/></svg>
+        </button>
       </div>
     </div>
 
     <div class="search-box">
-      <span class="search-icon">⌕</span>
+      <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
       <input id="searchInput" type="text" placeholder="Search documents, notes, tags…" autocomplete="off">
     </div>
 
     <div class="new-doc-wrap">
-      <button id="newDocBtn" class="new-doc-btn">+ New document</button>
+      <button id="newDocBtn" class="new-doc-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        <span>New document</span>
+      </button>
     </div>
 
     <nav class="filters">
@@ -43,7 +50,7 @@
 
   <main class="editor-area">
     <div id="emptyState" class="empty-state">
-      <div class="empty-mark">✎</div>
+      <div class="empty-mark brand-mark">✎</div>
       <h2>Welcome to Docly</h2>
       <p>Your local notepad. Select a note from the sidebar or create a new one to get started.</p>
     </div>
@@ -51,13 +58,29 @@
     <div id="editorWrap" class="editor-wrap hidden">
       <header class="editor-header">
         <div class="editor-header-top">
-          <input id="titleInput" class="title-input" placeholder="Untitled" autocomplete="off">
-          <div class="editor-header-actions">
-            <span id="saveStatus" class="save-status">Saved</span>
-            <button id="favBtn" class="icon-btn" title="Add to favorites">☆</button>
-            <button id="deleteBtn" class="icon-btn danger" title="Delete document">✕</button>
-          </div>
+          <input id="titleInput" class="title-input" placeholder="Untitled document" autocomplete="off">
+          <button id="favBtn" class="icon-btn" title="Add to favorites">
+            <svg class="star-off" viewBox="0 0 24 24"><path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/></svg>
+            <svg class="star-on" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+          </button>
+          <button id="deleteBtn" class="icon-btn danger" title="Delete document">
+            <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </button>
+          <span id="saveStatus" class="save-status">Saved</span>
+          <span class="header-spacer"></span>
+          <button id="exportTxt" class="hd-btn" title="Download as TXT">TXT</button>
+          <button id="exportHtml" class="hd-btn" title="Download as HTML">HTML</button>
+          <button id="exportPdf" class="hd-btn" title="Print / save as PDF">PDF</button>
         </div>
+        <nav id="menuBar" class="menubar" aria-label="Menu">
+          <button class="menu-btn" data-menu="file">File</button>
+          <button class="menu-btn" data-menu="edit">Edit</button>
+          <button class="menu-btn" data-menu="view">View</button>
+          <button class="menu-btn" data-menu="insert">Insert</button>
+          <button class="menu-btn" data-menu="format">Format</button>
+          <button class="menu-btn" data-menu="tools">Tools</button>
+          <button class="menu-btn" data-menu="help">Help</button>
+        </nav>
         <div id="tagsRow" class="tags-row">
           <div id="tagsList" class="tags-list"></div>
           <input id="tagInput" class="tag-input" placeholder="+ add tag and press Enter">
@@ -65,65 +88,104 @@
       </header>
 
       <div id="toolbar" class="toolbar">
+        <button id="undoBtn" class="tb-btn" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg></button>
+        <button id="redoBtn" class="tb-btn" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg></button>
+        <button id="printBtn" class="tb-btn" title="Print (Ctrl+P)"><svg viewBox="0 0 24 24"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg></button>
+        <span class="toolbar-sep"></span>
+
+        <select id="zoomSelect" class="toolbar-select toolbar-select-sm" title="Zoom">
+          <option value="0.5">50%</option>
+          <option value="0.75">75%</option>
+          <option value="0.9">90%</option>
+          <option value="1" selected>100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+          <option value="2">200%</option>
+        </select>
+        <span class="toolbar-sep"></span>
+
         <select id="blockSelect" class="toolbar-select" title="Paragraph style">
-          <option value="P">Text</option>
+          <option value="P">Normal text</option>
           <option value="H1">Heading 1</option>
           <option value="H2">Heading 2</option>
           <option value="H3">Heading 3</option>
           <option value="BLOCKQUOTE">Quote</option>
         </select>
+        <select id="fontFamilySelect" class="toolbar-select toolbar-select-font" title="Font (Ctrl+D)">
+          <option value="Arial">Arial</option>
+          <option value="Georgia">Georgia</option>
+          <option value="Times New Roman">Times New Roman</option>
+          <option value="Verdana">Verdana</option>
+          <option value="Trebuchet MS">Trebuchet MS</option>
+          <option value="Courier New">Courier New</option>
+          <option value="Comic Sans MS">Comic Sans MS</option>
+        </select>
         <span class="toolbar-sep"></span>
-        <button data-cmd="bold" class="tb-btn tb-bold" title="Bold (Ctrl+B)"><b>B</b></button>
-        <button data-cmd="italic" class="tb-btn tb-italic" title="Italic (Ctrl+I)"><i>I</i></button>
-        <button data-cmd="underline" class="tb-btn tb-underline" title="Underline (Ctrl+U)"><u>U</u></button>
-        <button data-cmd="strikeThrough" class="tb-btn tb-strike" title="Strikethrough"><s>S</s></button>
+
+        <button id="fontSizeDown" class="tb-btn" title="Decrease font size (Ctrl+[)"><svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg></button>
+        <input type="number" id="fontSizeInput" class="toolbar-input" min="8" max="72" value="15" title="Font size in pixels">
+        <button id="fontSizeUp" class="tb-btn" title="Increase font size (Ctrl+])"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+        <button id="fontSizeSet" class="tb-btn hidden" title="Set font size">✓</button>
         <span class="toolbar-sep"></span>
-        <button id="fontSizeUp" class="tb-btn" title="Increase font size">A<span style="font-size:0.65em;vertical-align:super">+</span></button>
-        <button id="fontSizeDown" class="tb-btn" title="Decrease font size">A<span style="font-size:0.65em;vertical-align:super">−</span></button>
-        <input type="number" id="fontSizeInput" class="toolbar-input" min="8" max="72" value="16" title="Font size in pixels">
-        <button id="fontSizeSet" class="tb-btn" title="Set font size">✓</button>
-        <button id="textColorBtn" class="tb-btn" title="Text color"><span style="color:var(--accent)">A</span></button>
-        <button id="highlightBtn" class="tb-btn" title="Highlight"><span style="background:#ffe066;color:#000;padding:0 3px;border-radius:2px">A</span></button>
+
+        <button data-cmd="bold" class="tb-btn" title="Bold (Ctrl+B)"><svg viewBox="0 0 24 24"><path d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/></svg></button>
+        <button data-cmd="italic" class="tb-btn" title="Italic (Ctrl+I)"><svg viewBox="0 0 24 24"><path d="M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4z"/></svg></button>
+        <button data-cmd="underline" class="tb-btn" title="Underline (Ctrl+U)"><svg viewBox="0 0 24 24"><path d="M12 17c3.31 0 6-2.69 6-6V3h-2.5v8c0 1.93-1.57 3.5-3.5 3.5S8.5 12.93 8.5 11V3H6v8c0 3.31 2.69 6 6 6zm-7 2v2h14v-2H5z"/></svg></button>
+        <button data-cmd="strikeThrough" class="tb-btn tb-glyph" title="Strikethrough"><s>S</s></button>
+        <button id="textColorBtn" class="tb-btn" title="Text color"><svg viewBox="0 0 24 24"><path d="M5.49 17h2.42l1.27-3.58h5.65L16.09 17h2.42L13.25 3h-2.5L5.49 17zm4.42-5.61l2.03-5.79h.12l2.03 5.79H9.91z"/><rect class="bar-text" x="3" y="20" width="18" height="3"/></svg></button>
+        <button id="highlightBtn" class="tb-btn" title="Highlight color"><svg viewBox="0 0 24 24"><path d="M16.56 8.94L7.62 0 6.21 1.41l2.38 2.38-5.15 5.15c-.59.59-.59 1.54 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10L10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z"/><rect class="bar-hi" x="3" y="20" width="18" height="3"/></svg></button>
         <span class="toolbar-sep"></span>
-        <button data-cmd="superscript" class="tb-btn" title="Superscript">x<sup>2</sup></button>
-        <button data-cmd="subscript" class="tb-btn" title="Subscript">x<sub>1</sub></button>
-        <button id="caseBtn" class="tb-btn" title="Change case">Aa</button>
+
+        <button data-cmd="superscript" class="tb-btn tb-glyph" title="Superscript">x²</button>
+        <button data-cmd="subscript" class="tb-btn tb-glyph" title="Subscript">x₂</button>
+        <button id="caseBtn" class="tb-btn tb-glyph" title="Change case">Aa</button>
         <span class="toolbar-sep"></span>
-        <button data-cmd="insertUnorderedList" class="tb-btn" title="Bullet list">≡</button>
-        <button data-cmd="insertOrderedList" class="tb-btn" title="Numbered list">1.</button>
+
+        <button id="linkBtn" class="tb-btn" title="Insert link"><svg viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg></button>
+        <button id="unlinkBtn" class="tb-btn" title="Remove link"><svg viewBox="0 0 24 24"><path d="M17 7h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1 0 1.43-.98 2.63-2.31 2.98l1.46 1.46C20.88 15.61 22 13.95 22 12c0-2.76-2.24-5-5-5zm-1 4h-2.19l2 2H16v-2zM2 4.27l3.11 3.11C3.29 8.12 2 9.91 2 12c0 2.76 2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1 0-1.59 1.21-2.9 2.76-3.07L8.73 11H8v2h2.73L13 15.27V17h1.73l4.01 4L20 19.74 3.27 3 2 4.27z"/></svg></button>
+        <button id="imageBtn" class="tb-btn" title="Insert image"><svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></button>
+        <button id="tableBtn" class="tb-btn" title="Insert table"><svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM8 20H4v-4h4v4zm0-6H4v-4h4v4zm0-6H4V4h4v4zm6 12h-4v-4h4v4zm0-6h-4v-4h4v4zm0-6h-4V4h4v4zm6 12h-4v-4h4v4zm0-6h-4v-4h4v4zm0-6h-4V4h4v4z"/></svg></button>
+        <button id="hrBtn" class="tb-btn" title="Horizontal line"><svg viewBox="0 0 24 24"><path d="M4 11h16v2H4z"/></svg></button>
+        <button id="codeBtn" class="tb-btn" title="Code block"><svg viewBox="0 0 24 24"><path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg></button>
         <span class="toolbar-sep"></span>
-        <button data-cmd="justifyLeft" class="tb-btn" title="Align left (Ctrl+L)">⇤</button>
-        <button data-cmd="justifyCenter" class="tb-btn" title="Center (Ctrl+E)">⇔</button>
-        <button data-cmd="justifyRight" class="tb-btn" title="Align right (Ctrl+R)">⇥</button>
-        <button data-cmd="justifyFull" class="tb-btn" title="Justify (Ctrl+J)">☰</button>
+
+        <button data-cmd="justifyLeft" class="tb-btn" title="Align left (Ctrl+L)"><svg viewBox="0 0 24 24"><path d="M15 15H3v2h12v-2zm0-8H3v2h12V7zM3 13h18v-2H3v2zm0 8h18v-2H3v2zM3 3v2h18V3H3z"/></svg></button>
+        <button data-cmd="justifyCenter" class="tb-btn" title="Center (Ctrl+E)"><svg viewBox="0 0 24 24"><path d="M7 15v2h10v-2H7zm-4 6h18v-2H3v2zm0-8h18v-2H3v2zm4-6v2h10V7H7zM3 3v2h18V3H3z"/></svg></button>
+        <button data-cmd="justifyRight" class="tb-btn" title="Align right (Ctrl+R)"><svg viewBox="0 0 24 24"><path d="M3 21h18v-2H3v2zm6-4h12v-2H9v2zm-6-4h18v-2H3v2zm6-4h12V7H9v2zM3 3v2h18V3H3z"/></svg></button>
+        <button data-cmd="justifyFull" class="tb-btn" title="Justify (Ctrl+J)"><svg viewBox="0 0 24 24"><path d="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z"/></svg></button>
         <span class="toolbar-sep"></span>
-        <button data-cmd="outdent" class="tb-btn" title="Decrease indent">←</button>
-        <button data-cmd="indent" class="tb-btn" title="Increase indent">→</button>
+
+        <select id="lineSpacingSelect" class="toolbar-select toolbar-select-sm" title="Line spacing (Ctrl+1 / 5 / 2)">
+          <option value="" selected disabled hidden>Spacing</option>
+          <option value="1">1.0</option>
+          <option value="1.15">1.15</option>
+          <option value="1.5">1.5</option>
+          <option value="2">2.0</option>
+        </select>
         <span class="toolbar-sep"></span>
-        <button id="lineSpacing1" class="tb-btn" title="Single line spacing (Ctrl+1)">1</button>
-        <button id="lineSpacing15" class="tb-btn" title="1.5 line spacing (Ctrl+5)">1.5</button>
-        <button id="lineSpacing2" class="tb-btn" title="Double line spacing (Ctrl+2)">2</button>
+
+        <button data-cmd="insertUnorderedList" class="tb-btn" title="Bulleted list (Ctrl+Shift+L)"><svg viewBox="0 0 24 24"><path d="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z"/></svg></button>
+        <button data-cmd="insertOrderedList" class="tb-btn" title="Numbered list"><svg viewBox="0 0 24 24"><path d="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z"/></svg></button>
+        <button data-cmd="outdent" class="tb-btn" title="Decrease indent (Ctrl+Shift+M)"><svg viewBox="0 0 24 24"><path d="M11 17h10v-2H11v2zm-8-5l4 4V8l-4 4zm0 9h18v-2H3v2zM3 3v2h18V3H3zm8 6h10V7H11v2zm0 4h10v-2H11v2z"/></svg></button>
+        <button data-cmd="indent" class="tb-btn" title="Increase indent (Ctrl+M)"><svg viewBox="0 0 24 24"><path d="M3 21h18v-2H3v2zM3 8v8l4-4-4-4zm8 9h10v-2H11v2zM3 3v2h18V3H3zm8 6h10V7H11v2zm0 4h10v-2H11v2z"/></svg></button>
         <span class="toolbar-sep"></span>
-        <button id="linkBtn" class="tb-btn" title="Insert link">∞</button>
-        <button id="codeBtn" class="tb-btn" title="Code block">{ }</button>
-        <button id="tableBtn" class="tb-btn" title="Insert table">⊞</button>
-        <button id="imageBtn" class="tb-btn" title="Insert image">IMG</button>
-        <span class="toolbar-sep"></span>
-        <button id="undoBtn" class="tb-btn" title="Undo (Ctrl+Z)">↶</button>
-        <button id="redoBtn" class="tb-btn" title="Redo (Ctrl+Y)">↷</button>
-        <span class="toolbar-sep"></span>
-        <button id="exportTxt" class="tb-btn" title="Export as TXT">TXT</button>
-        <button id="exportHtml" class="tb-btn" title="Export as HTML">HTML</button>
-        <button id="exportPdf" class="tb-btn" title="Export as PDF">PDF</button>
+
+        <button id="clearFormatBtn" class="tb-btn" title="Clear formatting (Ctrl+Space)"><svg viewBox="0 0 24 24"><path d="M3.27 5L2 6.27l6.97 6.97L6.5 19h3l1.57-3.66L16.73 21 18 19.73 3.27 5zM6 5v.18L8.82 8h2.4l-.72 1.68 2.1 2.1L14.21 8H20V5H6z"/></svg></button>
+        <button id="findBtn" class="tb-btn" title="Find and replace (Ctrl+H)"><svg viewBox="0 0 24 24"><path d="M11 6c1.38 0 2.63.56 3.54 1.46L12 10h6V4l-2.05 2.05C14.68 4.78 12.93 4 11 4c-3.53 0-6.43 2.61-6.92 6H6.1c.46-2.28 2.48-4 4.9-4zm5.64 9.14c.66-.9 1.12-1.97 1.28-3.14H15.9c-.46 2.28-2.48 4-4.9 4-1.38 0-2.63-.56-3.54-1.46L10 12H4v6l2.05-2.05C7.32 17.22 9.07 18 11 18c1.55 0 2.98-.51 4.14-1.36L20 21.49 21.49 20l-4.85-4.86z"/></svg></button>
       </div>
 
-      <div id="richEditor" class="rich-editor" contenteditable="true" spellcheck="true"></div>
+      <div class="page-scroll">
+        <div id="richEditor" class="rich-editor" contenteditable="true" spellcheck="true"></div>
+      </div>
     </div>
   </main>
 </div>
 
+<button id="themeToggle" class="theme-fab" title="Toggle light/dark theme">☾</button>
+
 <input type="file" id="imageInput" accept="image/*" class="hidden">
 <div id="toast" class="toast hidden"></div>
+<div id="menuPanel" class="menu-panel hidden"></div>
 
 <div id="modalOverlay" class="modal-overlay hidden">
   <div id="modal" class="modal">

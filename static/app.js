@@ -30,6 +30,7 @@
   const imageInput = el("imageInput");
   const themeToggle = el("themeToggle");
   const helpBtn = el("helpBtn");
+  const fontSizeInput = el("fontSizeInput");
   const toast = el("toast");
   const blockSelect = el("blockSelect");
   const caseBtn = el("caseBtn");
@@ -117,6 +118,7 @@
   
   function closeModal() {
     modalOverlay.classList.add("hidden");
+    modal.classList.remove("modal-help");
     if (modal._cleanup) {
       modal._cleanup();
       modal._cleanup = null;
@@ -124,7 +126,7 @@
   }
 
   function initTheme() {
-    const saved = localStorage.getItem("docly-theme") || "dark";
+    const saved = localStorage.getItem("docly-theme") || "light";
     document.documentElement.setAttribute("data-theme", saved);
     themeToggle.textContent = saved === "dark" ? "☾" : "☀";
   }
@@ -137,6 +139,7 @@
   });
 
   helpBtn.addEventListener("click", showHelpDialog);
+  el("modalClose").addEventListener("click", () => modalCancel.click());
 
   async function loadDocuments() {
     const data = await api("/api/documents");
@@ -259,7 +262,6 @@
     editorWrap.classList.remove("hidden");
 
     titleInput.value = doc.title || "";
-    favBtn.textContent = doc.favorite ? "⭐" : "☆";
     favBtn.classList.toggle("active", !!doc.favorite);
     setSaveStatus("saved");
 
@@ -490,7 +492,7 @@
       e.preventDefault();
       if (state.currentDoc) {
         focusRich();
-        document.execCommand("insertHTML", false, '<div style="line-height: 1.0;">&nbsp;</div>');
+        applyLineSpacing("1.0");
         scheduleSave();
       }
     }
@@ -499,7 +501,7 @@
       e.preventDefault();
       if (state.currentDoc) {
         focusRich();
-        document.execCommand("insertHTML", false, '<div style="line-height: 2.0;">&nbsp;</div>');
+        applyLineSpacing("2.0");
         scheduleSave();
       }
     }
@@ -508,7 +510,7 @@
       e.preventDefault();
       if (state.currentDoc) {
         focusRich();
-        document.execCommand("insertHTML", false, '<div style="line-height: 1.5;">&nbsp;</div>');
+        applyLineSpacing("1.5");
         scheduleSave();
       }
     }
@@ -668,7 +670,6 @@
       if (idx >= 0) state.documents[idx].favorite = updated.favorite;
       if (state.currentId === id) {
         state.currentDoc.favorite = updated.favorite;
-        favBtn.textContent = updated.favorite ? "⭐" : "☆";
         favBtn.classList.toggle("active", !!updated.favorite);
       }
       renderList();
@@ -884,6 +885,10 @@
     scheduleSave();
   });
 
+  fontSizeInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); el("fontSizeSet").click(); }
+  });
+
   el("fontSizeSet").addEventListener("click", () => {
     const size = parseFloat(fontSizeInput.value);
     if (!isNaN(size) && size >= 8 && size <= 72) {
@@ -943,24 +948,6 @@
       document.execCommand("insertText", false, newText);
       scheduleSave();
     }
-  });
-
-  el("lineSpacing1").addEventListener("click", () => {
-    focusRich();
-    document.execCommand("insertHTML", false, '<div style="line-height: 1.0;">&nbsp;</div>');
-    scheduleSave();
-  });
-
-  el("lineSpacing15").addEventListener("click", () => {
-    focusRich();
-    document.execCommand("insertHTML", false, '<div style="line-height: 1.5;">&nbsp;</div>');
-    scheduleSave();
-  });
-
-  el("lineSpacing2").addEventListener("click", () => {
-    focusRich();
-    document.execCommand("insertHTML", false, '<div style="line-height: 2.0;">&nbsp;</div>');
-    scheduleSave();
   });
 
   el("exportTxt").addEventListener("click", () => {
@@ -1109,77 +1096,139 @@
     const replaceTerm = await showModal("Replace", "Replace with:", "", true);
     if (replaceTerm === null) return;
 
-    const content = richEditor.innerHTML;
-    const newContent = content.replace(new RegExp(findTerm, 'gi'), replaceTerm);
+    const re = new RegExp(findTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    const walker = document.createTreeWalker(richEditor, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    let count = 0;
+    for (const node of nodes) {
+      const next = node.nodeValue.replace(re, () => { count++; return replaceTerm; });
+      if (next !== node.nodeValue) node.nodeValue = next;
+    }
 
-    if (newContent !== content) {
-      richEditor.innerHTML = newContent;
+    if (count > 0) {
       scheduleSave();
-      showToast("Replacement completed");
+      showToast(count + (count === 1 ? " replacement made" : " replacements made"));
     } else {
       showToast("No matches found");
     }
   }
 
+  function applyLineSpacing(value) {
+    if (!state.currentDoc) return;
+    focusRich();
+    const BLOCK = /^(P|DIV|H1|H2|H3|LI|BLOCKQUOTE|PRE)$/;
+    const blockOf = (n) => {
+      while (n && n !== richEditor) {
+        if (n.nodeType === 1 && BLOCK.test(n.tagName)) return n;
+        n = n.parentNode;
+      }
+      return null;
+    };
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    let range = sel.getRangeAt(0);
+    if (!blockOf(range.startContainer)) {
+      document.execCommand("formatBlock", false, "P");
+      if (sel.rangeCount === 0) return;
+      range = sel.getRangeAt(0);
+    }
+    const blocks = new Set();
+    const first = blockOf(range.startContainer);
+    const last = blockOf(range.endContainer);
+    if (first) blocks.add(first);
+    if (last) blocks.add(last);
+    const walker = document.createTreeWalker(richEditor, NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {
+      const n = walker.currentNode;
+      if (BLOCK.test(n.tagName) && range.intersectsNode(n)) blocks.add(n);
+    }
+    blocks.forEach((b) => { b.style.lineHeight = value; });
+    scheduleSave();
+  }
+
+  el("lineSpacingSelect").addEventListener("change", (e) => {
+    if (e.target.value) applyLineSpacing(e.target.value);
+    e.target.selectedIndex = 0;
+  });
+
+  el("printBtn").addEventListener("click", () => {
+    if (state.currentDoc) window.print();
+  });
+
+  el("clearFormatBtn").addEventListener("click", () => {
+    focusRich();
+    document.execCommand("removeFormat");
+    scheduleSave();
+  });
+
+  el("findBtn").addEventListener("click", () => {
+    if (state.currentDoc) showFindReplaceDialog();
+  });
+
+  el("hrBtn").addEventListener("click", () => {
+    focusRich();
+    document.execCommand("insertHorizontalRule");
+    scheduleSave();
+  });
+
+  el("unlinkBtn").addEventListener("click", () => {
+    focusRich();
+    document.execCommand("unlink");
+    scheduleSave();
+  });
+
+  const fontFamilySelect = el("fontFamilySelect");
+  fontFamilySelect.addEventListener("change", () => {
+    focusRich();
+    document.execCommand("fontName", false, fontFamilySelect.value);
+    scheduleSave();
+  });
+  function syncFontFamily() {
+    if (!state.currentDoc) return;
+    const cur = (document.queryCommandValue("fontName") || "").replace(/["']/g, "").split(",")[0].trim().toLowerCase();
+    const match = Array.from(fontFamilySelect.options).find((o) => o.value.toLowerCase() === cur);
+    fontFamilySelect.value = match ? match.value : "Arial";
+  }
+  richEditor.addEventListener("keyup", syncFontFamily);
+  richEditor.addEventListener("mouseup", syncFontFamily);
+
+  const zoomSelect = el("zoomSelect");
+  zoomSelect.addEventListener("change", () => {
+    richEditor.style.zoom = zoomSelect.value;
+  });
+
   function showHelpDialog() {
-    const helpText = `
-═══════════════════════════════════════════════════════════
-                    DOCLY SHORTCUTS
-═══════════════════════════════════════════════════════════
+    const helpText = `FILE
+Ctrl+N        New document
+Ctrl+O        Search documents
+Ctrl+S        Save
+Ctrl+P        Print / save as PDF
+F1            Help
 
-[FILE MANAGEMENT]
-───────────────────────────────────────────────────────────
-Ctrl+N    - New document
-Ctrl+O    - Search document
-Ctrl+S    - Save document
-Ctrl+P    - Print
-F1        - Help
+TEXT
+Ctrl+B / I / U   Bold / italic / underline
+Ctrl+D        Font name
+Ctrl+]        Increase font size
+Ctrl+[        Decrease font size
+Ctrl+Space    Clear formatting
+Ctrl+Z / Y    Undo / redo
 
-[TEXT FORMATTING]
-───────────────────────────────────────────────────────────
-Ctrl+B    - Bold
-Ctrl+I    - Italic
-Ctrl+U    - Underline
-Ctrl+D    - Font dialog
-Ctrl+]    - Increase font size
-Ctrl+[    - Decrease font size
-Ctrl+Space - Remove formatting
-Ctrl+Z    - Undo
-Ctrl+Y    - Redo
+PARAGRAPH
+Ctrl+L / E / R / J   Left / center / right / justify
+Ctrl+M        Increase indent
+Ctrl+Shift+M  Decrease indent
+Ctrl+1 / 5 / 2   Line spacing 1.0 / 1.5 / 2.0
+Ctrl+Shift+L  Bulleted list
 
-[PARAGRAPHS]
-───────────────────────────────────────────────────────────
-Ctrl+L    - Align left
-Ctrl+E    - Center
-Ctrl+R    - Align right
-Ctrl+J    - Justify
-Ctrl+M    - Increase indent
-Ctrl+Shift+M - Decrease indent
-Ctrl+1    - Single line spacing
-Ctrl+2    - Double line spacing
-Ctrl+5    - 1.5 line spacing
-Ctrl+Shift+L - Bullet list
-
-[SEARCH AND NAVIGATION]
-───────────────────────────────────────────────────────────
-Ctrl+F    - Find
-Ctrl+H    - Find and replace
-Ctrl+G    - Go to position
-Double click - Select word
-Triple click - Select paragraph
-Ctrl+Home - Start of document
-Ctrl+End  - End of document
-
-[EXPORT]
-───────────────────────────────────────────────────────────
-Use toolbar buttons to export as:
-• TXT (Plain text)
-• HTML (Formatted web page)
-• PDF (Print to PDF)
-
-═══════════════════════════════════════════════════════════
-`;
+FIND AND NAVIGATE
+Ctrl+F        Search documents
+Ctrl+H        Find and replace
+Ctrl+G        Go to position
+Ctrl+Home     Start of document
+Ctrl+End      End of document`;
     showModal("Keyboard shortcuts", helpText, "", false);
+    modal.classList.add("modal-help");
   }
 
   async function showFontDialog() {
@@ -1220,6 +1269,215 @@ Use toolbar buttons to export as:
       clickCount = 0;
     }, 300);
   });
+
+
+  /* ---------------- Menu bar ---------------- */
+  const menuBar = el("menuBar");
+  const menuPanel = el("menuPanel");
+  const sidebarEl = document.querySelector(".sidebar");
+  const zoomSel = el("zoomSelect");
+
+  const clickId = (id) => () => el(id).click();
+  const needDoc = (fn) => () => {
+    if (!state.currentDoc) { showToast("Open a document first"); return; }
+    focusRich();
+    fn();
+  };
+  const cmd = (c, v = null) => needDoc(() => { document.execCommand(c, false, v); scheduleSave(); });
+  const blockFmt = (tag) => needDoc(() => {
+    document.execCommand("formatBlock", false, tag);
+    blockSelect.value = tag;
+    scheduleSave();
+  });
+  const setZoom = (v) => () => { zoomSel.value = v; richEditor.style.zoom = v; };
+  const zoomItem = (v, label) => ({ label, check: () => zoomSel.value === v, run: setZoom(v) });
+
+  function showWordCount() {
+    const text = (richEditor.innerText || "").trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    const chars = text.replace(/\n/g, "").length;
+    const noSpaces = text.replace(/\s/g, "").length;
+    showModal("Word count", `Words: ${words}\nCharacters: ${chars}\nCharacters (no spaces): ${noSpaces}`, "", false);
+  }
+
+  const MENUS = {
+    file: [
+      { label: "New document", key: "Ctrl+N", run: () => newDocBtn.click() },
+      { label: "Save", key: "Ctrl+S", run: needDoc(() => { doSave(true); showToast("Document saved"); }) },
+      { label: "Add / remove favorite", run: needDoc(() => favBtn.click()) },
+      "-",
+      { label: "Download as text (.txt)", run: clickId("exportTxt") },
+      { label: "Download as web page (.html)", run: clickId("exportHtml") },
+      { label: "Print / save as PDF", key: "Ctrl+P", run: clickId("printBtn") },
+      "-",
+      { label: "Move to trash", run: needDoc(() => deleteBtn.click()) },
+    ],
+    edit: [
+      { label: "Undo", key: "Ctrl+Z", run: clickId("undoBtn") },
+      { label: "Redo", key: "Ctrl+Y", run: clickId("redoBtn") },
+      "-",
+      { label: "Cut", key: "Ctrl+X", run: cmd("cut") },
+      { label: "Copy", key: "Ctrl+C", run: cmd("copy") },
+      { label: "Select all", key: "Ctrl+A", run: cmd("selectAll") },
+      "-",
+      { label: "Find and replace", key: "Ctrl+H", run: clickId("findBtn") },
+      "-",
+      { label: "Clear formatting", key: "Ctrl+Space", run: clickId("clearFormatBtn") },
+    ],
+    view: [
+      { label: "Zoom", sub: [
+        zoomItem("0.5", "50%"), zoomItem("0.75", "75%"), zoomItem("1", "100%"),
+        zoomItem("1.25", "125%"), zoomItem("1.5", "150%"), zoomItem("2", "200%"),
+      ] },
+      "-",
+      { label: "Toolbar", check: () => !toolbar.classList.contains("hidden"),
+        run: () => toolbar.classList.toggle("hidden") },
+      { label: "Document list", check: () => !sidebarEl.classList.contains("hidden"),
+        run: () => sidebarEl.classList.toggle("hidden") },
+      "-",
+      { label: "Light / dark theme", run: () => themeToggle.click() },
+    ],
+    insert: [
+      { label: "Image", run: clickId("imageBtn") },
+      { label: "Table", run: clickId("tableBtn") },
+      { label: "Link", run: clickId("linkBtn") },
+      { label: "Horizontal line", run: clickId("hrBtn") },
+      { label: "Code block", run: clickId("codeBtn") },
+    ],
+    format: [
+      { label: "Text", sub: [
+        { label: "Bold", key: "Ctrl+B", run: cmd("bold") },
+        { label: "Italic", key: "Ctrl+I", run: cmd("italic") },
+        { label: "Underline", key: "Ctrl+U", run: cmd("underline") },
+        { label: "Strikethrough", run: cmd("strikeThrough") },
+        { label: "Superscript", run: cmd("superscript") },
+        { label: "Subscript", run: cmd("subscript") },
+      ] },
+      { label: "Paragraph styles", sub: [
+        { label: "Normal text", run: blockFmt("P") },
+        { label: "Heading 1", run: blockFmt("H1") },
+        { label: "Heading 2", run: blockFmt("H2") },
+        { label: "Heading 3", run: blockFmt("H3") },
+        { label: "Quote", run: blockFmt("BLOCKQUOTE") },
+      ] },
+      { label: "Alignment", sub: [
+        { label: "Left", key: "Ctrl+L", run: cmd("justifyLeft") },
+        { label: "Center", key: "Ctrl+E", run: cmd("justifyCenter") },
+        { label: "Right", key: "Ctrl+R", run: cmd("justifyRight") },
+        { label: "Justified", key: "Ctrl+J", run: cmd("justifyFull") },
+      ] },
+      { label: "Lists and indents", sub: [
+        { label: "Bulleted list", key: "Ctrl+Shift+L", run: cmd("insertUnorderedList") },
+        { label: "Numbered list", run: cmd("insertOrderedList") },
+        { label: "Increase indent", key: "Ctrl+M", run: cmd("indent") },
+        { label: "Decrease indent", key: "Ctrl+Shift+M", run: cmd("outdent") },
+      ] },
+      { label: "Line spacing", sub: [
+        { label: "Single", key: "Ctrl+1", run: () => applyLineSpacing("1") },
+        { label: "1.15", run: () => applyLineSpacing("1.15") },
+        { label: "1.5", key: "Ctrl+5", run: () => applyLineSpacing("1.5") },
+        { label: "Double", key: "Ctrl+2", run: () => applyLineSpacing("2") },
+      ] },
+      "-",
+      { label: "Clear formatting", key: "Ctrl+Space", run: clickId("clearFormatBtn") },
+    ],
+    tools: [
+      { label: "Word count", run: needDoc(showWordCount) },
+      { label: "Change case", run: clickId("caseBtn") },
+      "-",
+      { label: "Text color", run: clickId("textColorBtn") },
+      { label: "Highlight color", run: clickId("highlightBtn") },
+    ],
+    help: [
+      { label: "Keyboard shortcuts", key: "F1", run: () => showHelpDialog() },
+    ],
+  };
+
+  function renderMenuItems(items, container) {
+    for (const item of items) {
+      if (item === "-") {
+        const sep = document.createElement("div");
+        sep.className = "menu-sep";
+        container.appendChild(sep);
+        continue;
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "menu-item-wrap";
+      const b = document.createElement("button");
+      b.className = "menu-item";
+      const chk = document.createElement("span");
+      chk.className = "menu-check";
+      chk.textContent = item.check && item.check() ? "✓" : "";
+      const lbl = document.createElement("span");
+      lbl.className = "menu-label";
+      lbl.textContent = item.label;
+      b.appendChild(chk);
+      b.appendChild(lbl);
+      if (item.sub) {
+        const arrow = document.createElement("span");
+        arrow.className = "menu-arrow";
+        arrow.textContent = "▶";
+        b.appendChild(arrow);
+        const sub = document.createElement("div");
+        sub.className = "menu-sub";
+        renderMenuItems(item.sub, sub);
+        wrap.appendChild(b);
+        wrap.appendChild(sub);
+      } else {
+        if (item.key) {
+          const k = document.createElement("span");
+          k.className = "menu-key";
+          k.textContent = item.key;
+          b.appendChild(k);
+        }
+        b.addEventListener("click", () => { closeMenu(); item.run(); });
+        wrap.appendChild(b);
+      }
+      container.appendChild(wrap);
+    }
+  }
+
+  let openMenuName = null;
+  let hoverOpened = null;
+  function closeMenu() {
+    menuPanel.classList.add("hidden");
+    menuBar.querySelectorAll(".menu-btn").forEach((b) => b.classList.remove("open"));
+    openMenuName = null;
+    hoverOpened = null;
+  }
+  function openMenu(btn) {
+    const name = btn.dataset.menu;
+    menuPanel.innerHTML = "";
+    renderMenuItems(MENUS[name], menuPanel);
+    const r = btn.getBoundingClientRect();
+    menuPanel.style.left = r.left + "px";
+    menuPanel.style.top = r.bottom + 2 + "px";
+    menuPanel.classList.remove("hidden");
+    menuBar.querySelectorAll(".menu-btn").forEach((b) => b.classList.toggle("open", b === btn));
+    openMenuName = name;
+  }
+
+  // keep the text selection while using menus
+  menuBar.addEventListener("mousedown", (e) => e.preventDefault());
+  menuPanel.addEventListener("mousedown", (e) => e.preventDefault());
+  menuBar.querySelectorAll(".menu-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      // a menu that was just opened by hovering stays open on click
+      if (hoverOpened === btn.dataset.menu) { hoverOpened = null; return; }
+      if (openMenuName === btn.dataset.menu) closeMenu(); else openMenu(btn);
+    });
+    btn.addEventListener("mouseenter", () => {
+      if (openMenuName && openMenuName !== btn.dataset.menu) {
+        openMenu(btn);
+        hoverOpened = btn.dataset.menu;
+      }
+    });
+  });
+  document.addEventListener("mousedown", (e) => {
+    if (!menuPanel.contains(e.target) && !menuBar.contains(e.target)) closeMenu();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
+  window.addEventListener("blur", closeMenu);
 
   initTheme();
   loadDocuments().catch((err) => showToast("Loading error: " + err.message));
