@@ -49,6 +49,9 @@
   </aside>
 
   <main class="editor-area">
+    <button id="sidebarToggle" class="icon-btn sidebar-toggle" title="Show / hide document list">
+      <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+    </button>
     <div id="emptyState" class="empty-state">
       <div class="empty-mark brand-mark">✎</div>
       <h2>Welcome to Docly</h2>
@@ -58,7 +61,7 @@
     <div id="editorWrap" class="editor-wrap hidden">
       <header class="editor-header">
         <div class="editor-header-top">
-          <input id="titleInput" class="title-input" placeholder="Untitled document" autocomplete="off">
+          <input id="titleInput" class="title-input" placeholder="Untitled document" autocomplete="off" spellcheck="false">
           <button id="favBtn" class="icon-btn" title="Add to favorites">
             <svg class="star-off" viewBox="0 0 24 24"><path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/></svg>
             <svg class="star-on" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
@@ -67,10 +70,6 @@
             <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
           </button>
           <span id="saveStatus" class="save-status">Saved</span>
-          <span class="header-spacer"></span>
-          <button id="exportTxt" class="hd-btn" title="Download as TXT">TXT</button>
-          <button id="exportHtml" class="hd-btn" title="Download as HTML">HTML</button>
-          <button id="exportPdf" class="hd-btn" title="Print / save as PDF">PDF</button>
         </div>
         <nav id="menuBar" class="menubar" aria-label="Menu">
           <button class="menu-btn" data-menu="file">File</button>
@@ -122,10 +121,9 @@
         </select>
         <span class="toolbar-sep"></span>
 
-        <button id="fontSizeDown" class="tb-btn" title="Decrease font size (Ctrl+[)"><svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg></button>
-        <input type="number" id="fontSizeInput" class="toolbar-input" min="8" max="72" value="15" title="Font size in pixels">
-        <button id="fontSizeUp" class="tb-btn" title="Increase font size (Ctrl+])"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
-        <button id="fontSizeSet" class="tb-btn hidden" title="Set font size">✓</button>
+        <button id="fontSizeDown" class="tb-btn" title="Decrease font size (Ctrl+Shift+,)"><svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg></button>
+        <input type="text" id="fontSizeInput" class="toolbar-input" inputmode="decimal" autocomplete="off" value="14" title="Font size">
+        <button id="fontSizeUp" class="tb-btn" title="Increase font size (Ctrl+Shift+.)"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
         <span class="toolbar-sep"></span>
 
         <button data-cmd="bold" class="tb-btn" title="Bold (Ctrl+B)"><svg viewBox="0 0 24 24"><path d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/></svg></button>
@@ -175,7 +173,26 @@
       </div>
 
       <div class="page-scroll">
-        <div id="richEditor" class="rich-editor" contenteditable="true" spellcheck="true"></div>
+        <div id="pageArea" class="page-area">
+          <div id="hRuler" class="ruler-h">
+            <div id="hTrack" class="ruler-track">
+              <div id="hBody" class="ruler-body"></div>
+              <div id="hScale" class="ruler-scale"></div>
+              <div id="hmL" class="ruler-handle ruler-handle-x" title="Left margin"></div>
+              <div id="hmR" class="ruler-handle ruler-handle-x" title="Right margin"></div>
+              <div id="rmFirst" class="rm rm-first" title="First line indent"></div>
+              <div id="rmLeft" class="rm rm-left" title="Left indent"></div>
+              <div id="rmRight" class="rm rm-right" title="Right indent"></div>
+            </div>
+          </div>
+          <div id="vRuler" class="ruler-v">
+            <div id="vBody" class="ruler-body"></div>
+            <div id="vScale" class="ruler-scale"></div>
+            <div id="vmT" class="ruler-handle ruler-handle-y" title="Top margin"></div>
+            <div id="vmB" class="ruler-handle ruler-handle-y" title="Bottom margin"></div>
+          </div>
+          <div id="richEditor" class="rich-editor" contenteditable="true" spellcheck="true"></div>
+        </div>
       </div>
     </div>
   </main>
@@ -186,6 +203,9 @@
 <input type="file" id="imageInput" accept="image/*" class="hidden">
 <div id="toast" class="toast hidden"></div>
 <div id="menuPanel" class="menu-panel hidden"></div>
+<div id="sizeMenu" class="size-menu hidden"></div>
+<div id="colorPanel" class="color-panel hidden"></div>
+<input type="color" id="cpNative" class="cp-native" tabindex="-1" aria-hidden="true">
 
 <div id="modalOverlay" class="modal-overlay hidden">
   <div id="modal" class="modal">
