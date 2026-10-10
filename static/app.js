@@ -15,7 +15,13 @@
   const docList = el("docList");
   const docCount = el("docCount");
   const searchInput = el("searchInput");
-  const emptyState = el("emptyState");
+  const homeView = el("homeView");
+  const homeContent = el("homeContent");
+  const homeSearchInput = el("homeSearchInput");
+  const homeViewToggle = el("homeViewToggle");
+  const appEl = el("app");
+  state.homeView = "grid";
+  // the home always starts in grid (blocks) view
   const editorWrap = el("editorWrap");
   const titleInput = el("titleInput");
   const titleMeasure = document.createElement("canvas").getContext("2d");
@@ -193,6 +199,11 @@
   }
 
   function renderList() {
+    renderSidebarList();
+    renderHome();
+  }
+
+  function renderSidebarList() {
     const docs = filteredDocuments();
     docList.innerHTML = "";
     docCount.textContent = `${state.documents.length} document${state.documents.length === 1 ? "" : "s"}`;
@@ -209,7 +220,7 @@
 
     for (const doc of docs) {
       const item = document.createElement("div");
-      item.className = "doc-item" + (doc.id === state.currentId ? " active" : "");
+      item.className = "doc-item" + (doc.id === state.currentId ? " active" : "") + (doc.id === state.justCreated ? " doc-item-new" : "");
       item.dataset.id = doc.id;
       item.title = doc.title || "Untitled";
 
@@ -254,6 +265,106 @@
     }
   }
 
+  /* ---------------- Home (document browser) ---------------- */
+  function mk(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function homeActions(doc) {
+    const wrap = mk("div", "home-actions");
+    const star = mk("button", "row-icon-btn star" + (doc.favorite ? " active" : ""), doc.favorite ? "★" : "☆");
+    star.title = doc.favorite ? "Remove from favorites" : "Add to favorites";
+    star.addEventListener("click", (e) => { e.stopPropagation(); toggleFavorite(doc.id); });
+    const trash = mk("button", "row-icon-btn trash", "✕");
+    trash.title = "Delete (move to trash)";
+    trash.addEventListener("click", (e) => { e.stopPropagation(); deleteDocument(doc.id, doc.title); });
+    wrap.appendChild(star);
+    wrap.appendChild(trash);
+    return wrap;
+  }
+
+  function wireOpen(node, doc) {
+    node.dataset.id = doc.id;
+    node.tabIndex = 0;
+    node.addEventListener("click", () => openDocument(doc.id));
+    node.addEventListener("keydown", (e) => {
+      if (e.target === node && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDocument(doc.id); }
+    });
+  }
+
+  function renderHome() {
+    const isList = state.homeView === "list";
+    homeView.dataset.view = state.homeView;
+    homeViewToggle.title = isList ? "Grid view" : "List view";
+    homeViewToggle.setAttribute("aria-label", homeViewToggle.title);
+    homeContent.innerHTML = "";
+
+    const docs = filteredDocuments();
+    if (docs.length === 0) {
+      const empty = mk("div", "home-empty");
+      if (state.query) {
+        empty.appendChild(mk("strong", null, "No results"));
+        empty.appendChild(document.createTextNode("Nothing matches your search."));
+      } else if (state.documents.length === 0) {
+        empty.appendChild(mk("strong", null, "Welcome to Docly"));
+        empty.appendChild(document.createTextNode("You have no documents yet. Click “Blank document” above to create your first one."));
+      } else {
+        empty.appendChild(mk("strong", null, "Nothing here"));
+        empty.appendChild(document.createTextNode("No documents in this section."));
+      }
+      homeContent.appendChild(empty);
+      return;
+    }
+
+    if (isList) {
+      const list = mk("div", "home-list");
+      const head = mk("div", "home-list-head");
+      ["Name", "Tags", "Last modified", ""].forEach((t) => head.appendChild(mk("span", null, t)));
+      list.appendChild(head);
+      for (const doc of docs) {
+        const row = mk("div", "home-row");
+        const name = mk("div", "home-row-name");
+        name.appendChild(mk("span", "home-doc-icon"));
+        name.appendChild(mk("span", "home-row-title", doc.title || "Untitled"));
+        row.appendChild(name);
+        row.appendChild(mk("span", "home-row-tags", (doc.tags || []).join(", ")));
+        row.appendChild(mk("span", "home-row-date", fmtDate(doc.updatedAt)));
+        row.appendChild(homeActions(doc));
+        row.title = doc.title || "Untitled";
+        wireOpen(row, doc);
+        list.appendChild(row);
+      }
+      homeContent.appendChild(list);
+    } else {
+      const grid = mk("div", "home-grid");
+      for (const doc of docs) {
+        const card = mk("div", "home-card");
+        card.appendChild(mk("div", "home-card-thumb", doc.preview || ""));
+        const foot = mk("div", "home-card-foot");
+        foot.appendChild(mk("span", "home-doc-icon"));
+        const meta = mk("div", "home-card-meta");
+        meta.appendChild(mk("div", "home-card-title", doc.title || "Untitled"));
+        meta.appendChild(mk("div", "home-card-date", fmtDate(doc.updatedAt)));
+        foot.appendChild(meta);
+        foot.appendChild(homeActions(doc));
+        card.appendChild(foot);
+        card.title = doc.title || "Untitled";
+        wireOpen(card, doc);
+        grid.appendChild(card);
+      }
+      homeContent.appendChild(grid);
+    }
+  }
+
+  homeViewToggle.addEventListener("click", () => {
+    state.homeView = state.homeView === "grid" ? "list" : "grid";
+    renderHome();
+  });
+  el("homeNewBtn").addEventListener("click", () => newDocBtn.click());
+
   function escapeHtml(s) {
     return (s || "").replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -268,18 +379,24 @@
     state.currentDoc = doc;
     state.dirty = false;
 
-    emptyState.classList.add("hidden");
+    // coming from the home page: the document opens with the sidebar closed
+    if (appEl.classList.contains("home-mode")) appEl.classList.add("sidebar-closed");
+    appEl.classList.remove("home-mode");
+    homeView.classList.add("hidden");
     editorWrap.classList.remove("hidden");
+    editorWrap.classList.remove("doc-enter");
+    void editorWrap.offsetWidth;
+    editorWrap.classList.add("doc-enter");
 
     titleInput.value = doc.title || "";
     fitTitle();
+    rafRender();
     favBtn.classList.toggle("active", !!doc.favorite);
     setSaveStatus("saved");
 
     renderTags();
 
     richEditor.innerHTML = doc.content || "";
-    richEditor.setAttribute("data-placeholder", "Start writing…");
 
     renderList();
   }
@@ -288,7 +405,20 @@
     state.currentId = null;
     state.currentDoc = null;
     editorWrap.classList.add("hidden");
-    emptyState.classList.remove("hidden");
+    appEl.classList.add("home-mode");
+    appEl.classList.remove("sidebar-closed");
+    homeView.classList.remove("hidden");
+    homeView.classList.remove("home-enter");
+    void homeView.offsetWidth;
+    homeView.classList.add("home-enter");
+    renderList();
+  }
+
+  async function goHome() {
+    if (!state.currentId) return;
+    try { if (state.dirty) await doSave(true); } catch (_) {}
+    try { await (state.query ? runSearch(state.query) : loadDocuments()); } catch (_) {}
+    closeEditor();
   }
 
 
@@ -395,7 +525,7 @@
 
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
       e.preventDefault();
-      searchInput.focus();
+      activeSearch().focus();
       showToast("Search document to open");
     }
 
@@ -415,7 +545,7 @@
 
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
       e.preventDefault();
-      searchInput.focus();
+      activeSearch().focus();
     }
     
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
@@ -691,8 +821,14 @@
     if (!confirmed) return;
     try {
       await api("/api/documents/" + encodeURIComponent(id), { method: "DELETE" });
+      const sel = `[data-id="${CSS.escape(id)}"]`;
+      document.querySelectorAll(`.doc-item${sel}, .home-card${sel}, .home-row${sel}`)
+        .forEach((n) => n.classList.add("removing"));
+      if (state.currentId === id) editorWrap.classList.add("doc-leave");
+      await new Promise((res) => setTimeout(res, 260));
       state.documents = state.documents.filter((d) => d.id !== id);
       if (state.currentId === id) closeEditor();
+      editorWrap.classList.remove("doc-leave");
       renderList();
       showToast("Document moved to trash");
     } catch (err) {
@@ -719,6 +855,9 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: title.trim() || defaultName, type: "note" }),
       });
+      state.justCreated = doc.id;
+      clearTimeout(state.justCreatedTimer);
+      state.justCreatedTimer = setTimeout(() => { state.justCreated = null; }, 800);
       await loadDocuments();
       await openDocument(doc.id);
     } catch (err) {
@@ -727,18 +866,24 @@
   });
   document.querySelectorAll(".filter-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".filter-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
       state.filter = btn.dataset.filter;
+      document.querySelectorAll(".filter-btn").forEach((b) =>
+        b.classList.toggle("active", b.dataset.filter === state.filter));
       renderList();
     });
   });
 
-  searchInput.addEventListener("input", () => {
-    state.query = searchInput.value.trim();
+  function onSearchInput(src) {
+    const other = src === searchInput ? homeSearchInput : searchInput;
+    other.value = src.value;
+    state.query = src.value.trim();
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => runSearch(state.query), 250);
-  });
+  }
+  searchInput.addEventListener("input", () => onSearchInput(searchInput));
+  homeSearchInput.addEventListener("input", () => onSearchInput(homeSearchInput));
+
+  const activeSearch = () => (appEl.classList.contains("home-mode") ? homeSearchInput : searchInput);
 
   function focusRich() { richEditor.focus(); }
 
@@ -787,7 +932,7 @@
   });
 
   /* ---------------- Font size (points, like Google Docs) ---------------- */
-  const SIZE_PRESETS = [8, 9, 10, 11, 12, 14, 18, 24, 30, 36, 48, 60, 72, 96];
+  const SIZE_PRESETS = [8, 9, 10, 11, 12, 13, 14, 18, 24, 30, 36, 48, 60, 72, 96];
   const MIN_PT = 1;
   const MAX_PT = 400;
   const sizeMenu = el("sizeMenu");
@@ -806,7 +951,7 @@
     }
     const el0 = activeElement() || richEditor;
     const px = parseFloat(window.getComputedStyle(el0).fontSize);
-    return isNaN(px) ? 14 : px * 0.75;
+    return isNaN(px) ? 13 : px * 0.75;
   }
 
   function applyFontSize(pt) {
@@ -1128,66 +1273,810 @@
     }
   });
 
-  function doExportTxt() {
-    if (!state.currentDoc) {
-      showToast("No document open");
-      return;
-    }
-
-    const textContent = stripHtml(richEditor.innerHTML);
-    const blob = new Blob([textContent], { type: "text/plain;charset=utf-8" });
+  /* ---------------- Export (TXT, HTML, Markdown, Word, RTF, JSON backup) ---------------- */
+  function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${state.currentDoc.title || "document"}.txt`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function exportName(ext) {
+    const base = (state.currentDoc.title || "document").replace(/[\\/:*?"<>|]+/g, "_").trim() || "document";
+    return base + "." + ext;
+  }
+  function hasOpenDoc() {
+    if (!state.currentDoc) { showToast("No document open"); return false; }
+    return true;
+  }
+  const escHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const escXml = (s) => escHtml(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+
+  // ---- Plain text
+  function doExportTxt() {
+    if (!hasOpenDoc()) return;
+    downloadBlob(new Blob([richEditor.innerText], { type: "text/plain;charset=utf-8" }), exportName("txt"));
     showToast("Exported as TXT");
   }
 
+  // ---- Web page
   function doExportHtml() {
-    if (!state.currentDoc) {
-      showToast("No document open");
-      return;
-    }
-
-    const content = richEditor.innerHTML;
-    const htmlContent = `<!DOCTYPE html>
+    if (!hasOpenDoc()) return;
+    const title = escHtml(state.currentDoc.title || "Document");
+    const page = `<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${state.currentDoc.title || "Document"}</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }
-        h1, h2, h3 { color: #333; }
-        code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
-        pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
-        blockquote { border-left: 3px solid #ccc; margin-left: 0; padding-left: 10px; color: #666; }
-        table { border-collapse: collapse; width: 100%; }
-        td, th { border: 1px solid #ddd; padding: 8px; }
-        th { background: #f4f4f4; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title}</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+  h1, h2, h3 { color: #333; font-weight: 400; }
+  code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }
+  pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+  blockquote { border-left: 3px solid #ccc; margin-left: 0; padding-left: 10px; color: #666; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #ddd; padding: 8px; }
+  th { background: #f4f4f4; }
+  img { max-width: 100%; }
+</style>
 </head>
 <body>
-    <h1>${state.currentDoc.title || "Document"}</h1>
-    ${content}
+<h1>${title}</h1>
+${richEditor.innerHTML}
 </body>
 </html>`;
-
-    const blob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${state.currentDoc.title || "document"}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([page], { type: "text/html;charset=utf-8" }), exportName("html"));
     showToast("Exported as HTML");
   }
+
+  // ---- Markdown
+  const MD_BLOCK = new Set(["P", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "UL", "OL", "LI", "BLOCKQUOTE", "PRE", "HR", "TABLE"]);
+  function mdWrap(s, mark) {
+    const m = s.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    return m[2] ? m[1] + mark + m[2] + mark + m[3] : s;
+  }
+  function mdInline(n) {
+    if (n.nodeType === 3) return n.nodeValue.replace(/\s+/g, " ").replace(/([\\`*_\[\]])/g, "\\$1");
+    if (n.nodeType !== 1) return "";
+    const tag = n.tagName;
+    if (tag === "BR") return "  \n";
+    if (tag === "IMG") return `![${n.getAttribute("alt") || ""}](${n.getAttribute("src") || ""})`;
+    if (tag === "CODE") return n.textContent ? "`" + n.textContent + "`" : "";
+    let s = Array.from(n.childNodes).map(mdInline).join("");
+    const css = n.style || {};
+    const deco = css.textDecorationLine || css.textDecoration || "";
+    const bold = tag === "B" || tag === "STRONG" || css.fontWeight === "bold" || parseInt(css.fontWeight, 10) >= 600;
+    const ital = tag === "I" || tag === "EM" || css.fontStyle === "italic";
+    const strike = tag === "S" || tag === "STRIKE" || tag === "DEL" || deco.includes("line-through");
+    const under = tag === "U" || deco.includes("underline");
+    if (tag === "A" && s.trim()) s = `[${s}](${n.getAttribute("href") || ""})`;
+    if (tag === "SUP") s = `<sup>${s}</sup>`;
+    if (tag === "SUB") s = `<sub>${s}</sub>`;
+    if (under && tag !== "A") s = `<u>${s}</u>`;
+    if (strike) s = mdWrap(s, "~~");
+    if (ital) s = mdWrap(s, "*");
+    if (bold) s = mdWrap(s, "**");
+    return s;
+  }
+  function mdBlocks(container) {
+    const out = [];
+    let buf = "";
+    const flush = () => {
+      const t = buf.replace(/[ \t]+\n/g, "\n").trim();
+      if (t) out.push(t);
+      buf = "";
+    };
+    for (const n of container.childNodes) {
+      if (n.nodeType === 3 || (n.nodeType === 1 && !MD_BLOCK.has(n.tagName))) {
+        buf += mdInline(n);
+      } else if (n.nodeType === 1) {
+        flush();
+        const b = mdBlock(n);
+        if (b) out.push(b);
+      }
+    }
+    flush();
+    return out.join("\n\n");
+  }
+  function mdList(list, depth) {
+    const ordered = list.tagName === "OL";
+    const lines = [];
+    Array.from(list.children).filter((c) => c.tagName === "LI").forEach((li, i) => {
+      const nested = [];
+      let text = "";
+      for (const n of li.childNodes) {
+        if (n.nodeType === 1 && (n.tagName === "UL" || n.tagName === "OL")) nested.push(n);
+        else text += mdInline(n);
+      }
+      lines.push("   ".repeat(depth) + (ordered ? `${i + 1}. ` : "- ") + text.trim().replace(/\n/g, " "));
+      nested.forEach((nl) => lines.push(mdList(nl, depth + 1)));
+    });
+    return lines.join("\n");
+  }
+  function mdTable(t) {
+    const rows = Array.from(t.rows).map((r) =>
+      Array.from(r.cells).map((c) => mdInline(c).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim() || " ")
+    );
+    if (!rows.length) return "";
+    const cols = Math.max(...rows.map((r) => r.length));
+    const line = (r) => { while (r.length < cols) r.push(" "); return "| " + r.join(" | ") + " |"; };
+    return [line(rows[0]), "|" + " --- |".repeat(cols), ...rows.slice(1).map(line)].join("\n");
+  }
+  function mdBlock(n) {
+    const tag = n.tagName;
+    if (/^H[1-6]$/.test(tag)) return "#".repeat(+tag[1]) + " " + mdInline(n).trim();
+    if (tag === "UL" || tag === "OL") return mdList(n, 0);
+    if (tag === "BLOCKQUOTE") return mdBlocks(n).split("\n").map((l) => "> " + l).join("\n");
+    if (tag === "PRE") return "```\n" + n.textContent.replace(/\n$/, "") + "\n```";
+    if (tag === "HR") return "---";
+    if (tag === "TABLE") return mdTable(n);
+    return mdBlocks(n);
+  }
+  function doExportMd() {
+    if (!hasOpenDoc()) return;
+    const md = `# ${state.currentDoc.title || "Document"}\n\n${mdBlocks(richEditor)}\n`;
+    downloadBlob(new Blob([md], { type: "text/markdown;charset=utf-8" }), exportName("md"));
+    showToast("Exported as Markdown");
+  }
+
+  // ---- Shared document model (used by Word and RTF)
+  const colorCtx = document.createElement("canvas").getContext("2d");
+  function cssToHex(v) {
+    if (!v) return null;
+    colorCtx.fillStyle = "#000000";
+    colorCtx.fillStyle = v;
+    const c = colorCtx.fillStyle;
+    if (/^#[0-9a-f]{6}$/i.test(c)) return c.slice(1).toUpperCase();
+    const m = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+    if (m && (m[4] === undefined || parseFloat(m[4]) > 0)) {
+      return [m[1], m[2], m[3]].map((x) => (+x).toString(16).padStart(2, "0")).join("").toUpperCase();
+    }
+    return null;
+  }
+  function ptFromCss(v) {
+    const m = String(v).match(/([\d.]+)\s*(pt|px)/);
+    if (!m) return null;
+    return m[2] === "pt" ? parseFloat(m[1]) : parseFloat(m[1]) * 0.75;
+  }
+  const FONT_TAG_SIZES = { 1: 8, 2: 10, 3: 12, 4: 14, 5: 18, 6: 24, 7: 36 };
+  const HEADING_PT = { 1: 24, 2: 19, 3: 15, 4: 13, 5: 13, 6: 13 };
+
+  function inheritStyle(elm, st) {
+    const s = { ...st };
+    const t = elm.tagName;
+    if (t === "B" || t === "STRONG" || t === "TH") s.b = true;
+    if (t === "I" || t === "EM") s.i = true;
+    if (t === "U") s.u = true;
+    if (t === "S" || t === "STRIKE" || t === "DEL") s.s = true;
+    if (t === "SUP") s.sup = true;
+    if (t === "SUB") s.sub = true;
+    if (t === "CODE" || t === "PRE") s.font = "Courier New";
+    if (t === "A") { s.link = elm.getAttribute("href") || ""; s.u = true; s.color = "1155CC"; }
+    if (t === "FONT") {
+      const face = elm.getAttribute("face");
+      if (face) s.font = face.split(",")[0].replace(/["']/g, "").trim();
+      const col = elm.getAttribute("color");
+      if (col && t !== "A") s.color = cssToHex(col) || s.color;
+      const sz = FONT_TAG_SIZES[elm.getAttribute("size")];
+      if (sz) s.size = sz;
+    }
+    const css = elm.style;
+    if (css) {
+      if (css.fontWeight === "bold" || parseInt(css.fontWeight, 10) >= 600) s.b = true;
+      if (css.fontStyle === "italic") s.i = true;
+      const deco = css.textDecorationLine || css.textDecoration || "";
+      if (deco.includes("underline")) s.u = true;
+      if (deco.includes("line-through")) s.s = true;
+      if (css.color && t !== "A") s.color = cssToHex(css.color) || s.color;
+      if (css.backgroundColor) { const bg = cssToHex(css.backgroundColor); if (bg) s.bg = bg; }
+      if (css.fontSize) { const pt = ptFromCss(css.fontSize); if (pt) s.size = pt; }
+      if (css.fontFamily) s.font = css.fontFamily.split(",")[0].replace(/["']/g, "").trim();
+      if (css.verticalAlign === "super") s.sup = true;
+      if (css.verticalAlign === "sub") s.sub = true;
+    }
+    return s;
+  }
+
+  // Walks the editor DOM and returns a flat list of blocks:
+  //   { type: "p", runs, align, indent, firstLine, line, heading, quote, code, list }
+  //   { type: "hr" } | { type: "table", cols, rows: [[blocks]] }
+  function buildModel(root, baseStyle) {
+    const out = [];
+    let cur = null;
+
+    const newPara = (props) => ({ type: "p", runs: [], ...props });
+    const ensure = (props) => { if (!cur) cur = newPara(props); return cur; };
+    const flush = () => {
+      if (!cur) return;
+      const p = cur;
+      cur = null;
+      let hadBr = false;
+      while (p.runs.length && p.runs[p.runs.length - 1].br) { p.runs.pop(); hadBr = true; }
+      if (!p.code) {
+        const first = p.runs[0];
+        const last = p.runs[p.runs.length - 1];
+        if (first && first.text) first.text = first.text.replace(/^\s+/, "");
+        if (last && last.text) last.text = last.text.replace(/\s+$/, "");
+      }
+      p.runs = p.runs.filter((r) => r.br || r.text);
+      if (p.runs.length || hadBr) out.push(p);
+    };
+    const blockProps = (elm, base) => {
+      const p = { ...base };
+      const css = elm.style || {};
+      if (css.textAlign) p.align = css.textAlign;
+      const ml = parseFloat(css.marginLeft);
+      if (ml) p.indent = (base.indent || 0) + ml;
+      const ti = parseFloat(css.textIndent);
+      if (ti) p.firstLine = ti;
+      const lh = parseFloat(css.lineHeight);
+      if (lh) p.line = lh;
+      return p;
+    };
+
+    function walkChildren(parent, st, props) {
+      for (const n of Array.from(parent.childNodes)) walkNode(n, st, props);
+    }
+    function listWalk(list, st, props) {
+      const ordered = list.tagName === "OL";
+      const level = props.list ? props.list.level + 1 : 0;
+      Array.from(list.children).filter((c) => c.tagName === "LI").forEach((li, i) => {
+        flush();
+        const np = blockProps(li, { ...props, list: { ordered, level, index: i + 1 } });
+        walkChildren(li, inheritStyle(li, st), np);
+        flush();
+      });
+    }
+    function walkNode(n, st, props) {
+      if (n.nodeType === 3) {
+        if (props.code) {
+          const parts = n.nodeValue.split("\n");
+          parts.forEach((part, i) => {
+            if (i > 0) ensure(props).runs.push({ br: true });
+            if (part) ensure(props).runs.push({ text: part, ...st });
+          });
+          return;
+        }
+        const t = n.nodeValue.replace(/\s+/g, " ");
+        if (!t.trim() && !cur) return;
+        ensure(props).runs.push({ text: t, ...st });
+        return;
+      }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName;
+      if (tag === "BR") { ensure(props).runs.push({ br: true }); return; }
+      if (tag === "IMG") { ensure(props).runs.push({ text: "[image]", ...st }); return; }
+      if (tag === "HR") { flush(); out.push({ type: "hr" }); return; }
+      if (tag === "TABLE") {
+        flush();
+        const rows = Array.from(n.rows).map((r) => Array.from(r.cells).map((c) => buildModel(c, inheritStyle(c, st))));
+        out.push({ type: "table", cols: Math.max(1, ...rows.map((r) => r.length)), rows });
+        return;
+      }
+      if (tag === "UL" || tag === "OL") { flush(); listWalk(n, st, props); return; }
+      if (/^(P|DIV|H[1-6]|BLOCKQUOTE|PRE)$/.test(tag)) {
+        flush();
+        const np = blockProps(n, { ...props, list: undefined });
+        let st2 = inheritStyle(n, st);
+        if (/^H[1-6]$/.test(tag)) { np.heading = +tag[1]; if (!n.style.fontSize) st2 = { ...st2, size: HEADING_PT[+tag[1]] }; }
+        if (tag === "BLOCKQUOTE") np.quote = true;
+        if (tag === "PRE") { np.code = true; st2 = { ...st2, size: 11 }; }
+        walkChildren(n, st2, np);
+        flush();
+        return;
+      }
+      walkChildren(n, inheritStyle(n, st), props);
+    }
+
+    walkChildren(root, baseStyle, {});
+    flush();
+    return out;
+  }
+  const exportModel = () => buildModel(richEditor, { size: 13, font: "Arial" });
+
+  function pageSetup() {
+    const m = rulerMetrics();
+    const tw = (px) => Math.round(px * 15);
+    return {
+      w: 12240, h: 15840,
+      top: tw(m.t), bottom: tw(m.b), left: tw(m.l), right: tw(m.r),
+    };
+  }
+
+  // ---- Word (.docx): a real Office Open XML package written with a tiny ZIP writer
+  const CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    let c = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function makeZip(files, mime) {
+    const enc = new TextEncoder();
+    const now = new Date();
+    const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+    const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+    const parts = [];
+    const central = [];
+    let offset = 0;
+    for (const f of files) {
+      const name = enc.encode(f.name);
+      const data = typeof f.data === "string" ? enc.encode(f.data) : f.data;
+      const crc = crc32(data);
+      const local = new DataView(new ArrayBuffer(30));
+      local.setUint32(0, 0x04034b50, true);
+      local.setUint16(4, 20, true);
+      local.setUint16(6, 0x0800, true);
+      local.setUint16(8, 0, true);
+      local.setUint16(10, dosTime, true);
+      local.setUint16(12, dosDate, true);
+      local.setUint32(14, crc, true);
+      local.setUint32(18, data.length, true);
+      local.setUint32(22, data.length, true);
+      local.setUint16(26, name.length, true);
+      local.setUint16(28, 0, true);
+      parts.push(new Uint8Array(local.buffer), name, data);
+      const cd = new DataView(new ArrayBuffer(46));
+      cd.setUint32(0, 0x02014b50, true);
+      cd.setUint16(4, 20, true);
+      cd.setUint16(6, 20, true);
+      cd.setUint16(8, 0x0800, true);
+      cd.setUint16(10, 0, true);
+      cd.setUint16(12, dosTime, true);
+      cd.setUint16(14, dosDate, true);
+      cd.setUint32(16, crc, true);
+      cd.setUint32(20, data.length, true);
+      cd.setUint32(24, data.length, true);
+      cd.setUint16(28, name.length, true);
+      cd.setUint32(42, offset, true);
+      central.push(new Uint8Array(cd.buffer), name);
+      offset += 30 + name.length + data.length;
+    }
+    const centralSize = central.reduce((n, a) => n + a.length, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(8, files.length, true);
+    end.setUint16(10, files.length, true);
+    end.setUint32(12, centralSize, true);
+    end.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, new Uint8Array(end.buffer)], {
+      type: mime || "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+  }
+
+  function buildDocx(blocks) {
+    const page = pageSetup();
+    const links = [];
+    const linkId = (href) => {
+      let i = links.indexOf(href);
+      if (i < 0) { links.push(href); i = links.length - 1; }
+      return "rId" + (i + 1);
+    };
+    const JC = { left: "left", center: "center", right: "right", justify: "both" };
+    const BULLETS = ["\u2022", "\u25E6", "\u25AA"];
+
+    const runXml = (r) => {
+      if (r.br) return "<w:r><w:br/></w:r>";
+      let pr = "";
+      if (r.font) pr += `<w:rFonts w:ascii="${escXml(r.font)}" w:hAnsi="${escXml(r.font)}" w:cs="${escXml(r.font)}"/>`;
+      if (r.b) pr += "<w:b/>";
+      if (r.i) pr += "<w:i/>";
+      if (r.s) pr += "<w:strike/>";
+      if (r.color) pr += `<w:color w:val="${r.color}"/>`;
+      if (r.size) pr += `<w:sz w:val="${Math.round(r.size * 2)}"/><w:szCs w:val="${Math.round(r.size * 2)}"/>`;
+      if (r.u) pr += '<w:u w:val="single"/>';
+      if (r.bg) pr += `<w:shd w:val="clear" w:color="auto" w:fill="${r.bg}"/>`;
+      if (r.sup) pr += '<w:vertAlign w:val="superscript"/>';
+      else if (r.sub) pr += '<w:vertAlign w:val="subscript"/>';
+      return `<w:r>${pr ? `<w:rPr>${pr}</w:rPr>` : ""}<w:t xml:space="preserve">${escXml(r.text)}</w:t></w:r>`;
+    };
+
+    const paraXml = (p) => {
+      let ppr = "";
+      if (p.quote) ppr += '<w:pBdr><w:left w:val="single" w:sz="18" w:space="8" w:color="999999"/></w:pBdr>';
+      if (p.code) ppr += '<w:shd w:val="clear" w:color="auto" w:fill="F3F3F3"/>';
+      if (p.line) ppr += `<w:spacing w:line="${Math.round(p.line * 240)}" w:lineRule="auto"/>`;
+      let left = Math.round((p.indent || 0) * 15) + (p.quote ? 360 : 0);
+      let prefix = "";
+      if (p.list) {
+        left += (p.list.level + 1) * 360;
+        const label = p.list.ordered ? `${p.list.index}.` : BULLETS[p.list.level % 3];
+        prefix = `<w:r><w:t xml:space="preserve">${label}</w:t></w:r><w:r><w:tab/></w:r>`;
+        ppr += `<w:ind w:left="${left}" w:hanging="360"/>`;
+      } else if (left || p.firstLine) {
+        ppr += `<w:ind w:left="${left}"${p.firstLine ? ` w:firstLine="${Math.round(p.firstLine * 15)}"` : ""}/>`;
+      }
+      if (p.align && JC[p.align]) ppr += `<w:jc w:val="${JC[p.align]}"/>`;
+      if (p.heading && p.heading <= 3) ppr += `<w:outlineLvl w:val="${p.heading - 1}"/>`;
+
+      let body = prefix;
+      for (let i = 0; i < p.runs.length; ) {
+        const r = p.runs[i];
+        if (r.link) {
+          let inner = "";
+          let j = i;
+          while (j < p.runs.length && p.runs[j].link === r.link) inner += runXml(p.runs[j++]);
+          body += `<w:hyperlink r:id="${linkId(r.link)}" w:history="1">${inner}</w:hyperlink>`;
+          i = j;
+        } else {
+          body += runXml(r);
+          i++;
+        }
+      }
+      return `<w:p>${ppr ? `<w:pPr>${ppr}</w:pPr>` : ""}${body}</w:p>`;
+    };
+
+    const blocksXml = (list) => list.map((b) => {
+      if (b.type === "hr") {
+        return '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/></w:pBdr></w:pPr></w:p>';
+      }
+      if (b.type === "table") {
+        const total = page.w - page.left - page.right;
+        const colW = Math.floor(total / b.cols);
+        const border = ["top", "left", "bottom", "right", "insideH", "insideV"]
+          .map((s) => `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="999999"/>`).join("");
+        const grid = Array.from({ length: b.cols }, () => `<w:gridCol w:w="${colW}"/>`).join("");
+        const rows = b.rows.map((row) => {
+          const cells = row.map((cell) => {
+            const inner = blocksXml(cell) || "<w:p/>";
+            return `<w:tc><w:tcPr><w:tcW w:w="${colW}" w:type="dxa"/></w:tcPr>${inner}</w:tc>`;
+          });
+          while (cells.length < b.cols) cells.push(`<w:tc><w:tcPr><w:tcW w:w="${colW}" w:type="dxa"/></w:tcPr><w:p/></w:tc>`);
+          return `<w:tr>${cells.join("")}</w:tr>`;
+        }).join("");
+        return `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/><w:tblBorders>${border}</w:tblBorders></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl><w:p/>`;
+      }
+      return paraXml(b);
+    }).join("");
+
+    const body = blocksXml(blocks);
+    const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+    const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document ${NS}><w:body>${body}<w:sectPr><w:pgSz w:w="${page.w}" w:h="${page.h}"/><w:pgMar w:top="${page.top}" w:right="${page.right}" w:bottom="${page.bottom}" w:left="${page.left}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+    const rels = links.map((href, i) =>
+      `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escXml(href)}" TargetMode="External"/>`
+    ).join("");
+    return makeZip([
+      { name: "[Content_Types].xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>` },
+      { name: "_rels/.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>` },
+      { name: "word/document.xml", data: documentXml },
+      { name: "word/_rels/document.xml.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>` },
+    ]);
+  }
+  function doExportDocx() {
+    if (!hasOpenDoc()) return;
+    downloadBlob(buildDocx(exportModel()), exportName("docx"));
+    showToast("Exported as Word document");
+  }
+
+  // ---- Rich Text Format (.rtf)
+  function buildRtf(blocks) {
+    const page = pageSetup();
+    const fonts = [];
+    const colors = [];
+    const fontIdx = (n) => {
+      n = n || "Arial";
+      let i = fonts.indexOf(n);
+      if (i < 0) { fonts.push(n); i = fonts.length - 1; }
+      return i;
+    };
+    const colorIdx = (hex) => {
+      let i = colors.indexOf(hex);
+      if (i < 0) { colors.push(hex); i = colors.length - 1; }
+      return i + 1;
+    };
+    const esc = (t) => {
+      let o = "";
+      for (let k = 0; k < t.length; k++) {
+        const ch = t[k];
+        const c = t.charCodeAt(k);
+        if (ch === "\\" || ch === "{" || ch === "}") o += "\\" + ch;
+        else if (c === 9) o += "\\tab ";
+        else if (c === 10) o += "\\line ";
+        else if (c < 32) continue;
+        else if (c > 126) o += "\\u" + (c > 32767 ? c - 65536 : c) + "?";
+        else o += ch;
+      }
+      return o;
+    };
+    const ALIGN = { left: "\\ql", center: "\\qc", right: "\\qr", justify: "\\qj" };
+    const BULLETS = ["\u2022", "\u25E6", "\u25AA"];
+
+    const runRtf = (r) => {
+      if (r.br) return "\\line ";
+      let s = `\\f${fontIdx(r.font)}\\fs${Math.round((r.size || 13) * 2)}`;
+      if (r.b) s += "\\b";
+      if (r.i) s += "\\i";
+      if (r.u) s += "\\ul";
+      if (r.s) s += "\\strike";
+      if (r.sup) s += "\\super";
+      else if (r.sub) s += "\\sub";
+      if (r.color) s += `\\cf${colorIdx(r.color)}`;
+      if (r.bg) s += `\\highlight${colorIdx(r.bg)}`;
+      return `{${s} ${esc(r.text)}}`;
+    };
+    const paraRtf = (p, inCell) => {
+      let s = "\\pard" + (inCell ? "\\intbl" : "");
+      let left = Math.round((p.indent || 0) * 15) + (p.quote ? 360 : 0);
+      let first = Math.round((p.firstLine || 0) * 15);
+      let prefix = "";
+      if (p.list) {
+        left += (p.list.level + 1) * 360;
+        first = -360;
+        const label = p.list.ordered ? `${p.list.index}.` : BULLETS[p.list.level % 3];
+        prefix = `{\\f${fontIdx("Arial")}\\fs28 ${esc(label)}}\\tab `;
+      }
+      if (left) s += `\\li${left}`;
+      if (first) s += `\\fi${first}`;
+      if (p.align && ALIGN[p.align]) s += ALIGN[p.align];
+      if (p.line) s += `\\sl${Math.round(p.line * 240)}\\slmult1`;
+      return s + " " + prefix + p.runs.map(runRtf).join("");
+    };
+    const blocksRtf = (list, inCell) => list.map((b) => {
+      if (b.type === "hr") return "\\pard\\brdrb\\brdrs\\brdrw10\\brsp20 \\par\n";
+      if (b.type === "table") {
+        const total = page.w - page.left - page.right;
+        const colW = Math.floor(total / b.cols);
+        const brd = "\\clbrdrt\\brdrs\\brdrw10\\clbrdrl\\brdrs\\brdrw10\\clbrdrb\\brdrs\\brdrw10\\clbrdrr\\brdrs\\brdrw10";
+        let out = "";
+        for (const row of b.rows) {
+          let def = "\\trowd\\trgaph108";
+          for (let c = 0; c < b.cols; c++) def += `${brd}\\cellx${colW * (c + 1)}`;
+          let cells = "";
+          for (let c = 0; c < b.cols; c++) {
+            const cell = (row[c] || []).filter((x) => x.type === "p");
+            const text = cell.length ? cell.map((p) => paraRtf(p, true)).join("\\par\n") : "\\pard\\intbl ";
+            cells += `${text}\\cell\n`;
+          }
+          out += `${def}\n${cells}\\row\n`;
+        }
+        return out + "\\pard \\par\n";
+      }
+      return paraRtf(b, inCell) + "\\par\n";
+    }).join("");
+
+    const body = blocksRtf(blocks, false);
+    const fontTbl = fonts.map((f, i) => `{\\f${i}\\fnil\\fcharset0 ${f.replace(/[;{}\\]/g, "")};}`).join("");
+    const colorTbl = colors.map((hex) => {
+      const n = parseInt(hex, 16);
+      return `\\red${(n >> 16) & 255}\\green${(n >> 8) & 255}\\blue${n & 255};`;
+    }).join("");
+    if (!fonts.length) fonts.push("Arial");
+    return `{\\rtf1\\ansi\\ansicpg1252\\deff0{\\fonttbl${fontTbl || "{\\f0\\fnil\\fcharset0 Arial;}"}}{\\colortbl;${colorTbl}}\\paperw${page.w}\\paperh${page.h}\\margl${page.left}\\margr${page.right}\\margt${page.top}\\margb${page.bottom}\\uc1\n${body}}`;
+  }
+  function doExportRtf() {
+    if (!hasOpenDoc()) return;
+    downloadBlob(new Blob([buildRtf(exportModel())], { type: "application/rtf" }), exportName("rtf"));
+    showToast("Exported as Rich Text");
+  }
+
+  // ---- OpenDocument Text (.odt)
+  function buildOdt(blocks) {
+    const page = pageSetup();
+    const inch = (tw) => (tw / 1440).toFixed(3) + "in";
+    const tStyles = new Map();
+    const pStyles = new Map();
+    const extraStyles = [];
+    const NS = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.2"';
+    const BULLETS = ["\u2022", "\u25E6", "\u25AA"];
+    const ALIGN = { left: "start", center: "center", right: "end", justify: "justify" };
+
+    const textStyle = (r) => {
+      let a = "";
+      if (r.font) a += ` fo:font-family="${escXml(r.font)}"`;
+      if (r.size) a += ` fo:font-size="${r.size}pt"`;
+      if (r.b) a += ' fo:font-weight="bold"';
+      else if (r.nb) a += ' fo:font-weight="normal"';
+      if (r.i) a += ' fo:font-style="italic"';
+      if (r.u) a += ' style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color"';
+      if (r.s) a += ' style:text-line-through-style="solid"';
+      if (r.color) a += ` fo:color="#${r.color}"`;
+      if (r.bg) a += ` fo:background-color="#${r.bg}"`;
+      if (r.sup) a += ' style:text-position="super 58%"';
+      else if (r.sub) a += ' style:text-position="sub 58%"';
+      if (!a) return null;
+      if (!tStyles.has(a)) tStyles.set(a, "T" + (tStyles.size + 1));
+      return tStyles.get(a);
+    };
+    const paraStyle = (p) => {
+      let a = "";
+      let left = (p.indent || 0) * 0.75 + (p.quote ? 18 : 0);
+      let first = (p.firstLine || 0) * 0.75;
+      if (p.list) { left += (p.list.level + 1) * 18; first = -18; }
+      if (left) a += ` fo:margin-left="${left}pt"`;
+      if (first) a += ` fo:text-indent="${first}pt"`;
+      if (p.align && ALIGN[p.align]) a += ` fo:text-align="${ALIGN[p.align]}"`;
+      if (p.line) a += ` fo:line-height="${Math.round(p.line * 100)}%"`;
+      if (p.quote) a += ' fo:border-left="1.5pt solid #999999" fo:padding-left="6pt"';
+      if (p.code) a += ' fo:background-color="#f3f3f3"';
+      if (p.hr) a += ' fo:border-bottom="0.75pt solid #999999"';
+      if (!a) return null;
+      if (!pStyles.has(a)) pStyles.set(a, "P" + (pStyles.size + 1));
+      return pStyles.get(a);
+    };
+    const odtText = (t) => escXml(t)
+      .replace(/\t/g, "<text:tab/>")
+      .replace(/ {2,}/g, (m) => ` <text:s text:c="${m.length - 1}"/>`);
+    const runOdt = (r) => {
+      if (r.br) return "<text:line-break/>";
+      const sn = textStyle(r);
+      const t = odtText(r.text);
+      return sn ? `<text:span text:style-name="${sn}">${t}</text:span>` : t;
+    };
+    const paraOdt = (p) => {
+      let inner = "";
+      if (p.list) {
+        const label = p.list.ordered ? `${p.list.index}.` : BULLETS[p.list.level % 3];
+        inner += `${escXml(label)}<text:tab/>`;
+      }
+      // headings are not bold in the editor, so switch off LibreOffice's default heading weight
+      const runs = p.heading ? p.runs.map((r) => (r.br ? r : { ...r, nb: true })) : p.runs;
+      for (let i = 0; i < runs.length; ) {
+        const r = runs[i];
+        if (r.link) {
+          let g = "";
+          let j = i;
+          while (j < runs.length && runs[j].link === r.link) g += runOdt(runs[j++]);
+          inner += `<text:a xlink:type="simple" xlink:href="${escXml(r.link)}">${g}</text:a>`;
+          i = j;
+        } else {
+          inner += runOdt(r);
+          i++;
+        }
+      }
+      const sn = paraStyle(p);
+      const attr = sn ? ` text:style-name="${sn}"` : "";
+      if (p.heading && p.heading <= 6) return `<text:h text:outline-level="${p.heading}"${attr}>${inner}</text:h>`;
+      return `<text:p${attr}>${inner}</text:p>`;
+    };
+    let tableCount = 0;
+    const blocksOdt = (list) => list.map((b) => {
+      if (b.type === "hr") return `<text:p text:style-name="${paraStyle({ hr: true })}"/>`;
+      if (b.type === "table") {
+        const n = ++tableCount;
+        const total = page.w - page.left - page.right;
+        const colW = Math.floor(total / b.cols);
+        extraStyles.push(`<style:style style:name="Tbl${n}" style:family="table"><style:table-properties style:width="${inch(colW * b.cols)}" table:align="margins"/></style:style>`);
+        extraStyles.push(`<style:style style:name="Col${n}" style:family="table-column"><style:table-column-properties style:column-width="${inch(colW)}"/></style:style>`);
+        const rows = b.rows.map((row) => {
+          const cells = row.map((cell) => `<table:table-cell table:style-name="Cell" office:value-type="string">${blocksOdt(cell) || "<text:p/>"}</table:table-cell>`);
+          while (cells.length < b.cols) cells.push('<table:table-cell table:style-name="Cell" office:value-type="string"><text:p/></table:table-cell>');
+          return `<table:table-row>${cells.join("")}</table:table-row>`;
+        }).join("");
+        return `<table:table table:name="Table${n}" table:style-name="Tbl${n}"><table:table-column table:style-name="Col${n}" table:number-columns-repeated="${b.cols}"/>${rows}</table:table><text:p/>`;
+      }
+      return paraOdt(b);
+    }).join("");
+
+    const body = blocksOdt(blocks);
+    const auto = [
+      ...Array.from(tStyles, ([a, name]) => `<style:style style:name="${name}" style:family="text"><style:text-properties${a}/></style:style>`),
+      ...Array.from(pStyles, ([a, name]) => `<style:style style:name="${name}" style:family="paragraph"><style:paragraph-properties${a}/></style:style>`),
+      '<style:style style:name="Cell" style:family="table-cell"><style:table-cell-properties fo:padding="0.04in" fo:border="0.5pt solid #999999"/></style:style>',
+      ...extraStyles,
+    ].join("");
+    const title = escXml(state.currentDoc.title || "Document");
+    const mime = "application/vnd.oasis.opendocument.text";
+    return makeZip([
+      { name: "mimetype", data: mime },
+      { name: "META-INF/manifest.xml", data: `<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2"><manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="${mime}"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="meta.xml" manifest:media-type="text/xml"/></manifest:manifest>` },
+      { name: "meta.xml", data: `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-meta ${NS}><office:meta><dc:title>${title}</dc:title><meta:generator>Docly</meta:generator></office:meta></office:document-meta>` },
+      { name: "styles.xml", data: `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-styles ${NS}><office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="${inch(page.w)}" fo:page-height="${inch(page.h)}" fo:margin-top="${inch(page.top)}" fo:margin-bottom="${inch(page.bottom)}" fo:margin-left="${inch(page.left)}" fo:margin-right="${inch(page.right)}"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1"/></office:master-styles></office:document-styles>` },
+      { name: "content.xml", data: `<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content ${NS}><office:automatic-styles>${auto}</office:automatic-styles><office:body><office:text>${body}</office:text></office:body></office:document-content>` },
+    ], mime);
+  }
+  function doExportOdt() {
+    if (!hasOpenDoc()) return;
+    downloadBlob(buildOdt(exportModel()), exportName("odt"));
+    showToast("Exported as OpenDocument");
+  }
+
+  // ---- EPUB (.epub): a zipped XHTML book with a table of contents built from the headings
+  function buildEpub() {
+    const title = escXml(state.currentDoc.title || "Document");
+    const doc = document.implementation.createHTMLDocument("");
+    const box = doc.createElement("div");
+    box.innerHTML = richEditor.innerHTML;
+
+    const toc = [];
+    box.querySelectorAll("h1, h2, h3").forEach((h, i) => {
+      h.id = "sec" + (i + 1);
+      toc.push({ id: h.id, text: h.textContent.trim() || "Untitled" });
+    });
+
+    const EXT = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/svg+xml": "svg", "image/webp": "webp" };
+    const images = [];
+    box.querySelectorAll("img").forEach((img, i) => {
+      const m = (img.getAttribute("src") || "").match(/^data:(image\/[\w.+-]+);base64,([\s\S]*)$/);
+      if (!m) return;
+      try {
+        const bin = atob(m[2]);
+        const bytes = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+        const name = `images/img${i + 1}.${EXT[m[1]] || "img"}`;
+        images.push({ name, mime: m[1], data: bytes });
+        img.setAttribute("src", name);
+        if (!img.hasAttribute("alt")) img.setAttribute("alt", "");
+      } catch (_) {}
+    });
+    box.removeAttribute("xmlns");
+    const bodyXml = new XMLSerializer().serializeToString(box);
+
+    const uid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+    const chapter = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en"><head><meta charset="utf-8"/><title>${title}</title><style>body{font-family:serif;line-height:1.5}h1,h2,h3{font-weight:normal}blockquote{border-left:3px solid #999;margin-left:0;padding-left:1em;color:#555}pre{background:#f3f3f3;padding:.6em;white-space:pre-wrap}table{border-collapse:collapse}td,th{border:1px solid #999;padding:.3em .5em}img{max-width:100%}</style></head><body><h1>${title}</h1>${bodyXml}</body></html>`;
+    const navItems = [`<li><a href="chapter.xhtml">${title}</a></li>`, ...toc.map((t) => `<li><a href="chapter.xhtml#${t.id}">${escXml(t.text)}</a></li>`)].join("");
+    const nav = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en"><head><meta charset="utf-8"/><title>Contents</title></head><body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navItems}</ol></nav></body></html>`;
+    const imgManifest = images.map((im, i) => `<item id="img${i + 1}" href="${im.name}" media-type="${im.mime}"/>`).join("");
+    const opf = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${uid}</dc:identifier><dc:title>${title}</dc:title><dc:language>en</dc:language><meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z$/, "Z")}</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>${imgManifest}</manifest><spine><itemref idref="chapter"/></spine></package>`;
+    return makeZip([
+      { name: "mimetype", data: "application/epub+zip" },
+      { name: "META-INF/container.xml", data: `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>` },
+      { name: "OEBPS/content.opf", data: opf },
+      { name: "OEBPS/nav.xhtml", data: nav },
+      { name: "OEBPS/chapter.xhtml", data: chapter },
+      ...images.map((im) => ({ name: "OEBPS/" + im.name, data: im.data })),
+    ], "application/epub+zip");
+  }
+  function doExportEpub() {
+    if (!hasOpenDoc()) return;
+    downloadBlob(buildEpub(), exportName("epub"));
+    showToast("Exported as EPUB");
+  }
+
+  // ---- PDF: uses the browser's own PDF writer (the document title becomes the file name)
+  function doExportPdf() {
+    if (!hasOpenDoc()) return;
+    const previous = document.title;
+    document.title = state.currentDoc.title || "document";
+    const restore = () => {
+      document.title = previous;
+      window.removeEventListener("afterprint", restore);
+    };
+    window.addEventListener("afterprint", restore);
+    showToast('Choose "Save as PDF" as the destination');
+    setTimeout(() => window.print(), 150);
+  }
+
+  // ---- Docly backup (.json): everything needed to restore the document
+  function doExportJson() {
+    if (!hasOpenDoc()) return;
+    const d = state.currentDoc;
+    const data = {
+      app: "docly",
+      title: d.title || "",
+      tags: d.tags || [],
+      favorite: !!d.favorite,
+      content: richEditor.innerHTML,
+      exportedAt: new Date().toISOString(),
+    };
+    downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), exportName("json"));
+    showToast("Exported as backup (JSON)");
+  }
+
 
   el("linkBtn").addEventListener("click", async () => {
     const url = await showModal("Insert link", "Enter link URL:", "https://", true);
@@ -1443,12 +2332,17 @@ Ctrl+End      End of document`;
 
 
 
-  /* ---------------- Rulers (like Google Docs) ---------------- */
+  /* ---------------- Rulers (a frame along the top and left of the view) ---------------- */
   const CM = 96 / 2.54;
+  const editorBody = el("editorBody");
+  const pageScroll = document.querySelector(".page-scroll");
+  const hRuler = el("hRuler");
   const hTrack = el("hTrack");
+  const hPage = el("hPage");
   const hBody = el("hBody");
   const hScale = el("hScale");
   const vRuler = el("vRuler");
+  const vPage = el("vPage");
   const vBody = el("vBody");
   const vScale = el("vScale");
   const hmL = el("hmL");
@@ -1459,6 +2353,10 @@ Ctrl+End      End of document`;
   const mLeft = el("rmLeft");
   const mRight = el("rmRight");
 
+  const rulersVisible = () => !editorBody.classList.contains("no-ruler");
+  const zoomNow = () => parseFloat(pageArea.style.zoom) || 1;
+
+  // Page size and margins in the page's own (unzoomed) pixels
   function rulerMetrics() {
     const cs = window.getComputedStyle(richEditor);
     return {
@@ -1473,16 +2371,14 @@ Ctrl+End      End of document`;
     };
   }
 
-  // Tick marks every 0.25 cm: small, half-cm medium, whole cm = number
-  function buildScale(len, origin, bodyEnd, horizontal) {
-    const q = CM / 4;
-    const thick = horizontal ? 18 : 18;
+  // Tick marks every 0.25 cm (small), 0.5 cm (medium), whole cm = number.
+  // Only the visible range lo..hi is drawn.
+  function buildScale(origin, step, lo, hi, bodyEnd, horizontal, thick) {
     let out = "";
-    const start = -Math.floor(origin / q);
-    const end = Math.floor((len - origin) / q);
-    for (let i = start; i <= end; i++) {
-      const pos = origin + i * q;
-      if (pos < 0 || pos > len) continue;
+    const iStart = Math.ceil((lo - origin) / step);
+    const iEnd = Math.floor((hi - origin) / step);
+    for (let i = iStart; i <= iEnd; i++) {
+      const pos = origin + i * step;
       const mod = ((i % 4) + 4) % 4;
       if (mod === 0) {
         const n = i / 4;
@@ -1503,24 +2399,52 @@ Ctrl+End      End of document`;
     return out;
   }
 
+  let rulerFrame = 0;
+  function rafRender() {
+    if (rulerFrame) return;
+    rulerFrame = requestAnimationFrame(() => { rulerFrame = 0; renderRulers(); });
+  }
+
   function renderRulers() {
-    if (!state.currentDoc || pageArea.classList.contains("no-ruler")) return;
+    if (!state.currentDoc || !rulersVisible()) return;
     const m = rulerMetrics();
     if (!m.W) return;
+    const z = zoomNow();
+    const hr = hRuler.getBoundingClientRect();
+    const vr = vRuler.getBoundingClientRect();
+    const pr = pageArea.getBoundingClientRect();
+    if (!hr.width || !vr.height) return;
 
-    const x0 = m.bl + m.l;
-    const x1 = m.W - m.bl - m.r;
+    // the rulers stop where the page's scrollbars begin
+    const sbw = pageScroll.offsetWidth - pageScroll.clientWidth;
+    const sbh = pageScroll.offsetHeight - pageScroll.clientHeight;
+    const trackW = Math.max(0, hr.width - sbw);
+    const trackH = Math.max(0, vr.height - sbh);
+    hTrack.style.right = sbw + "px";
+
+    // horizontal: page position in ruler coordinates
+    const pl = pr.left - hr.left;
+    const pageW = m.W * z;
+    const x0 = pl + (m.bl + m.l) * z;
+    const x1 = pl + (m.W - m.bl - m.r) * z;
+    hPage.style.left = pl + "px";
+    hPage.style.width = pageW + "px";
     hBody.style.left = x0 + "px";
     hBody.style.width = Math.max(0, x1 - x0) + "px";
-    hScale.innerHTML = `<svg width="${m.W}" height="18">${buildScale(m.W, x0, x1, true)}</svg>`;
+    hScale.innerHTML = `<svg width="${trackW}" height="16">${buildScale(x0, (CM / 4) * z, Math.max(0, pl), Math.min(trackW, pl + pageW), x1, true, 16)}</svg>`;
     hmL.style.left = x0 - 4 + "px";
     hmR.style.left = x1 - 4 + "px";
 
-    const y0 = m.bt + m.t;
-    const y1 = m.H - m.bt - m.b;
+    // vertical: page position in ruler coordinates
+    const pt = pr.top - vr.top;
+    const pageH = m.H * z;
+    const y0 = pt + (m.bt + m.t) * z;
+    const y1 = pt + (m.H - m.bt - m.b) * z;
+    vPage.style.top = pt + "px";
+    vPage.style.height = pageH + "px";
     vBody.style.top = y0 + "px";
     vBody.style.height = Math.max(0, y1 - y0) + "px";
-    vScale.innerHTML = `<svg width="18" height="${m.H}">${buildScale(m.H, y0, y1, false)}</svg>`;
+    vScale.innerHTML = `<svg width="22" height="${trackH}">${buildScale(y0, (CM / 4) * z, Math.max(0, pt), Math.min(trackH, pt + pageH), y1, false, 22)}</svg>`;
     vmT.style.top = y0 - 4 + "px";
     vmB.style.top = y1 - 4 + "px";
 
@@ -1533,17 +2457,19 @@ Ctrl+End      End of document`;
   }
 
   function updateRulerMarkers() {
-    if (!state.currentDoc || pageArea.classList.contains("no-ruler")) return;
+    if (!state.currentDoc || !rulersVisible()) return;
     const m = rulerMetrics();
+    const z = zoomNow();
+    const pl = pageArea.getBoundingClientRect().left - hRuler.getBoundingClientRect().left;
     const x0 = m.bl + m.l;
     const blk = firstSelectedBlock();
     const cs = blk ? window.getComputedStyle(blk) : null;
     const ml = cs ? parseFloat(cs.marginLeft) || 0 : 0;
     const ti = cs ? parseFloat(cs.textIndent) || 0 : 0;
     const mr = cs ? parseFloat(cs.marginRight) || 0 : 0;
-    mLeft.style.left = x0 + ml - 5 + "px";
-    mFirst.style.left = x0 + ml + ti - 5 + "px";
-    mRight.style.left = m.W - m.bl - m.r - mr - 5 + "px";
+    mLeft.style.left = pl + (x0 + ml) * z - 5 + "px";
+    mFirst.style.left = pl + (x0 + ml + ti) * z - 5 + "px";
+    mRight.style.left = pl + (m.W - m.bl - m.r - mr) * z - 5 + "px";
   }
 
   const snap = (v) => Math.round(v / 6) * 6; // 1/16 inch
@@ -1572,6 +2498,7 @@ Ctrl+End      End of document`;
     const indentKind = ["first", "left", "right"].includes(kind);
     const blocks = indentKind ? selectedBlocks() : [];
     const m0 = rulerMetrics();
+    const z = zoomNow();
     const x0 = m0.bl + m0.l;
     const b0 = blocks[0] ? window.getComputedStyle(blocks[0]) : null;
     const ml0 = b0 ? parseFloat(b0.marginLeft) || 0 : 0;
@@ -1579,9 +2506,9 @@ Ctrl+End      End of document`;
     let changedMargins = false;
 
     function move(ev) {
-      const rect = (horizontal ? hTrack : vRuler).getBoundingClientRect();
-      const scale = (horizontal ? rect.width / m0.W : rect.height / m0.H) || 1;
-      const pos = horizontal ? (ev.clientX - rect.left) / scale : (ev.clientY - rect.top) / scale;
+      // pointer position in the page's own pixels, measured from the page's top-left corner
+      const pr = pageArea.getBoundingClientRect();
+      const pos = horizontal ? (ev.clientX - pr.left) / z : (ev.clientY - pr.top) / z;
       const bodyW = m0.W - m0.bl * 2 - m0.l - m0.r;
       if (kind === "left") {
         const ml = clamp(snap(pos - x0), 0, bodyW - 60);
@@ -1625,25 +2552,38 @@ Ctrl+End      End of document`;
 
   [["rmFirst", "first"], ["rmLeft", "left"], ["rmRight", "right"], ["hmL", "mleft"], ["hmR", "mright"], ["vmT", "mtop"], ["vmB", "mbottom"]]
     .forEach(([id, kind]) => el(id).addEventListener("mousedown", (e) => startRulerDrag(kind, e)));
-  [el("hRuler"), vRuler].forEach((r) => r.addEventListener("mousedown", (e) => e.preventDefault()));
+  [hRuler, vRuler].forEach((r) => r.addEventListener("mousedown", (e) => e.preventDefault()));
 
+  // Show / hide the rulers (off by default, the choice is remembered)
   function toggleRuler() {
-    pageArea.classList.toggle("no-ruler");
-    try { localStorage.setItem("docly-ruler", pageArea.classList.contains("no-ruler") ? "0" : "1"); } catch (_) {}
-    renderRulers();
+    editorBody.classList.toggle("no-ruler");
+    try { localStorage.setItem("docly-ruler", rulersVisible() ? "1" : "0"); } catch (_) {}
+    rafRender();
   }
-  try { if (localStorage.getItem("docly-ruler") === "0") pageArea.classList.add("no-ruler"); } catch (_) {}
+  // rulers are off by default; they come back only if the user turned them on
+  editorBody.classList.add("no-ruler");
+  try { if (localStorage.getItem("docly-ruler") === "1") editorBody.classList.remove("no-ruler"); } catch (_) {}
 
-  new ResizeObserver(renderRulers).observe(richEditor);
+  // keep the rulers in step with scrolling, resizing and zoom
+  pageScroll.addEventListener("scroll", rafRender, { passive: true });
+  new ResizeObserver(rafRender).observe(richEditor);
+  new ResizeObserver(rafRender).observe(pageScroll);
+  new MutationObserver(rafRender).observe(pageArea, { attributes: true, attributeFilter: ["style"] });
 
   /* ---------------- Sidebar toggle ---------------- */
-  const sidebarPanel = document.querySelector(".sidebar");
+  const appRoot = el("app");
+  const sidebarOpen = () => !appRoot.classList.contains("sidebar-closed");
   function toggleSidebar() {
-    sidebarPanel.classList.toggle("hidden");
-    try { localStorage.setItem("docly-sidebar", sidebarPanel.classList.contains("hidden") ? "0" : "1"); } catch (_) {}
+    appRoot.classList.toggle("sidebar-closed");
+    rafRender();
   }
-  try { if (localStorage.getItem("docly-sidebar") === "0") sidebarPanel.classList.add("hidden"); } catch (_) {}
+  /* the sidebar always starts open */
   el("sidebarToggle").addEventListener("click", toggleSidebar);
+  el("sidebarOpenBtn").addEventListener("click", toggleSidebar);
+  el("homeBtn").addEventListener("click", goHome);
+  const brandHome = el("brandHome");
+  brandHome.addEventListener("click", goHome);
+  brandHome.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goHome(); } });
 
   /* ---------------- Menu bar ---------------- */
   const menuBar = el("menuBar");
@@ -1678,12 +2618,23 @@ Ctrl+End      End of document`;
   const MENUS = {
     file: [
       { label: "New document", key: "Ctrl+N", run: () => newDocBtn.click() },
+      { label: "All documents (home)", run: () => goHome() },
       { label: "Save", key: "Ctrl+S", run: needDoc(() => { doSave(true); showToast("Document saved"); }) },
       { label: "Add / remove favorite", run: needDoc(() => favBtn.click()) },
       "-",
-      { label: "Download as text (.txt)", run: doExportTxt },
-      { label: "Download as web page (.html)", run: doExportHtml },
-      { label: "Print / save as PDF", key: "Ctrl+P", run: clickId("printBtn") },
+      { label: "Download", sub: [
+        { label: "Microsoft Word (.docx)", run: doExportDocx },
+        { label: "OpenDocument Format (.odt)", run: doExportOdt },
+        { label: "Rich Text Format (.rtf)", run: doExportRtf },
+        { label: "PDF Document (.pdf)", run: doExportPdf },
+        { label: "Plain Text (.txt)", run: doExportTxt },
+        { label: "Web Page (.html)", run: doExportHtml },
+        { label: "EPUB Publication (.epub)", run: doExportEpub },
+        { label: "Markdown (.md)", run: doExportMd },
+        "-",
+        { label: "Docly backup (.json)", run: doExportJson },
+      ] },
+      { label: "Print", key: "Ctrl+P", run: clickId("printBtn") },
       "-",
       { label: "Move to trash", run: needDoc(() => deleteBtn.click()) },
     ],
@@ -1705,10 +2656,10 @@ Ctrl+End      End of document`;
         zoomItem("1.25", "125%"), zoomItem("1.5", "150%"), zoomItem("2", "200%"),
       ] },
       "-",
-      { label: "Ruler", check: () => !pageArea.classList.contains("no-ruler"), run: toggleRuler },
+      { label: "Ruler", check: () => rulersVisible(), run: toggleRuler },
       { label: "Toolbar", check: () => !toolbar.classList.contains("hidden"),
         run: () => toolbar.classList.toggle("hidden") },
-      { label: "Document list", check: () => !sidebarEl.classList.contains("hidden"),
+      { label: "Document list", check: () => sidebarOpen(),
         run: toggleSidebar },
       "-",
       { label: "Light / dark theme", run: () => themeToggle.click() },

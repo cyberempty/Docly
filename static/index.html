@@ -8,15 +8,18 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app">
+<div id="app" class="home-mode">
 
   <aside class="sidebar">
     <div class="sidebar-header">
-      <div class="brand">
+      <div class="brand brand-link" id="brandHome" role="button" tabindex="0" title="All documents">
         <span class="brand-mark">✎</span>
         <span class="brand-name">Docly</span>
       </div>
       <div class="header-actions">
+        <button id="sidebarToggle" class="icon-btn sidebar-toggle" title="Hide document list">
+          <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+        </button>
         <button id="helpBtn" class="icon-btn" title="Help (F1)">
           <svg viewBox="0 0 24 24"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/></svg>
         </button>
@@ -49,18 +52,57 @@
   </aside>
 
   <main class="editor-area">
-    <button id="sidebarToggle" class="icon-btn sidebar-toggle" title="Show / hide document list">
-      <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
-    </button>
-    <div id="emptyState" class="empty-state">
-      <div class="empty-mark brand-mark">✎</div>
-      <h2>Welcome to Docly</h2>
-      <p>Your local notepad. Select a note from the sidebar or create a new one to get started.</p>
+    <div id="homeView" class="home-view" data-view="grid">
+      <header class="home-header">
+        <div class="home-header-left">
+          <div class="brand">
+            <span class="brand-mark">✎</span>
+            <span class="brand-name">Docly</span>
+          </div>
+        </div>
+        <div class="search-box home-search">
+          <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+          <input id="homeSearchInput" type="text" placeholder="Search" autocomplete="off">
+        </div>
+        <div class="home-header-right">
+          <button id="homeViewToggle" class="icon-btn home-view-toggle" title="List view" aria-label="List view">
+              <svg class="ic-list" viewBox="0 0 24 24"><path d="M4 14h4v-4H4v4zm0 5h4v-4H4v4zM4 9h4V5H4v4zm5 5h12v-4H9v4zm0 5h12v-4H9v4zM9 5v4h12V5H9z"/></svg>
+              <svg class="ic-grid" viewBox="0 0 24 24"><path d="M3 3v8h8V3H3zm6 6H5V5h4v4zm-6 4v8h8v-8H3zm6 6H5v-4h4v4zm4-16v8h8V3h-8zm6 6h-4V5h4v4zm-6 4v8h8v-8h-8zm6 6h-4v-4h4v4z"/></svg>
+            </button>
+        </div>
+      </header>
+      <div class="home-body">
+        <div class="home-inner">
+          <h2 class="home-section-title">Create a new document</h2>
+          <div class="home-new-wrap">
+            <button id="homeNewBtn" class="home-new-card" title="New document">
+              <span class="home-new-thumb"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M22 8h4v14h14v4H26v14h-4V26H8v-4h14z"/></svg></span>
+              <span class="home-new-label">Blank document</span>
+            </button>
+          </div>
+
+          <div class="home-docs-head">
+            <h2 class="home-section-title">Your documents</h2>
+            <nav class="filters home-filters">
+              <button class="filter-btn active" data-filter="all">All</button>
+              <button class="filter-btn" data-filter="recent">Recent</button>
+              <button class="filter-btn" data-filter="favorites">Favorites</button>
+            </nav>
+          </div>
+          <div id="homeContent" class="home-content"></div>
+        </div>
+      </div>
     </div>
 
     <div id="editorWrap" class="editor-wrap hidden">
       <header class="editor-header">
         <div class="editor-header-top">
+          <button id="homeBtn" class="icon-btn sidebar-open-btn" title="All documents">
+            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+          </button>
+          <button id="sidebarOpenBtn" class="icon-btn sidebar-open-btn" title="Show document list">
+            <svg viewBox="0 0 24 24"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+          </button>
           <input id="titleInput" class="title-input" placeholder="Untitled document" autocomplete="off" spellcheck="false">
           <button id="favBtn" class="icon-btn" title="Add to favorites">
             <svg class="star-off" viewBox="0 0 24 24"><path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/></svg>
@@ -122,7 +164,7 @@
         <span class="toolbar-sep"></span>
 
         <button id="fontSizeDown" class="tb-btn" title="Decrease font size (Ctrl+Shift+,)"><svg viewBox="0 0 24 24"><path d="M5 11h14v2H5z"/></svg></button>
-        <input type="text" id="fontSizeInput" class="toolbar-input" inputmode="decimal" autocomplete="off" value="14" title="Font size">
+        <input type="text" id="fontSizeInput" class="toolbar-input" inputmode="decimal" autocomplete="off" value="13" title="Font size">
         <button id="fontSizeUp" class="tb-btn" title="Increase font size (Ctrl+Shift+.)"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
         <span class="toolbar-sep"></span>
 
@@ -172,26 +214,31 @@
         <button id="findBtn" class="tb-btn" title="Find and replace (Ctrl+H)"><svg viewBox="0 0 24 24"><path d="M11 6c1.38 0 2.63.56 3.54 1.46L12 10h6V4l-2.05 2.05C14.68 4.78 12.93 4 11 4c-3.53 0-6.43 2.61-6.92 6H6.1c.46-2.28 2.48-4 4.9-4zm5.64 9.14c.66-.9 1.12-1.97 1.28-3.14H15.9c-.46 2.28-2.48 4-4.9 4-1.38 0-2.63-.56-3.54-1.46L10 12H4v6l2.05-2.05C7.32 17.22 9.07 18 11 18c1.55 0 2.98-.51 4.14-1.36L20 21.49 21.49 20l-4.85-4.86z"/></svg></button>
       </div>
 
-      <div class="page-scroll">
-        <div id="pageArea" class="page-area">
-          <div id="hRuler" class="ruler-h">
-            <div id="hTrack" class="ruler-track">
-              <div id="hBody" class="ruler-body"></div>
-              <div id="hScale" class="ruler-scale"></div>
-              <div id="hmL" class="ruler-handle ruler-handle-x" title="Left margin"></div>
-              <div id="hmR" class="ruler-handle ruler-handle-x" title="Right margin"></div>
-              <div id="rmFirst" class="rm rm-first" title="First line indent"></div>
-              <div id="rmLeft" class="rm rm-left" title="Left indent"></div>
-              <div id="rmRight" class="rm rm-right" title="Right indent"></div>
-            </div>
+      <div id="editorBody" class="editor-body">
+        <div class="ruler-corner"></div>
+        <div id="hRuler" class="ruler-h">
+          <div id="hTrack" class="ruler-track">
+            <div id="hPage" class="ruler-page"></div>
+            <div id="hBody" class="ruler-body"></div>
+            <div id="hScale" class="ruler-scale"></div>
+            <div id="hmL" class="ruler-handle ruler-handle-x" title="Left margin"></div>
+            <div id="hmR" class="ruler-handle ruler-handle-x" title="Right margin"></div>
+            <div id="rmFirst" class="rm rm-first" title="First line indent"></div>
+            <div id="rmLeft" class="rm rm-left" title="Left indent"></div>
+            <div id="rmRight" class="rm rm-right" title="Right indent"></div>
           </div>
-          <div id="vRuler" class="ruler-v">
-            <div id="vBody" class="ruler-body"></div>
-            <div id="vScale" class="ruler-scale"></div>
-            <div id="vmT" class="ruler-handle ruler-handle-y" title="Top margin"></div>
-            <div id="vmB" class="ruler-handle ruler-handle-y" title="Bottom margin"></div>
+        </div>
+        <div id="vRuler" class="ruler-v">
+          <div id="vPage" class="ruler-page"></div>
+          <div id="vBody" class="ruler-body"></div>
+          <div id="vScale" class="ruler-scale"></div>
+          <div id="vmT" class="ruler-handle ruler-handle-y" title="Top margin"></div>
+          <div id="vmB" class="ruler-handle ruler-handle-y" title="Bottom margin"></div>
+        </div>
+        <div class="page-scroll">
+          <div id="pageArea" class="page-area">
+            <div id="richEditor" class="rich-editor" contenteditable="true" spellcheck="true"></div>
           </div>
-          <div id="richEditor" class="rich-editor" contenteditable="true" spellcheck="true"></div>
         </div>
       </div>
     </div>
