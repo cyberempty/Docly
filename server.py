@@ -22,7 +22,6 @@ HOST = "127.0.0.1"
 PORT = 8756
 VALID_TYPES = {"note"}
 META_FILE = "document.json"
-ASSETS_DIR = "assets"
 APP_TRASH_DIR = os.path.join(BASE_DIR, ".trash")
 
 _lock = threading.RLock()
@@ -203,22 +202,6 @@ class DoclyHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"documents": results})
             return
 
-        m = re.match(r"^/api/documents/([^/]+)/assets/([^/]+)$", path)
-        if m:
-            doc_id, filename = unquote(m.group(1)), unquote(m.group(2))
-            with _lock:
-                _, folder = load_doc(doc_id)
-            if not folder:
-                self._send_error_json(404, "Document not found")
-                return
-            asset_path = os.path.join(DOCS_DIR, folder, ASSETS_DIR, filename)
-            asset_path = os.path.normpath(asset_path)
-            if not asset_path.startswith(os.path.normpath(os.path.join(DOCS_DIR, folder, ASSETS_DIR))):
-                self._send_error_json(403, "Forbidden")
-                return
-            self._send_file(asset_path, download_name=filename)
-            return
-
         m = re.match(r"^/api/documents/([^/]+)$", path)
         if m:
             doc_id = unquote(m.group(1))
@@ -254,7 +237,7 @@ class DoclyHandler(BaseHTTPRequestHandler):
                 ensure_docs_dir()
                 folder = unique_folder_name(title)
                 folder_path = os.path.join(DOCS_DIR, folder)
-                os.makedirs(os.path.join(folder_path, ASSETS_DIR), exist_ok=True)
+                os.makedirs(folder_path, exist_ok=True)
                 doc_id = str(uuid.uuid4())
                 ts = now_iso()
                 data = {
@@ -272,42 +255,7 @@ class DoclyHandler(BaseHTTPRequestHandler):
             self._send_json(201, data)
             return
 
-        m = re.match(r"^/api/documents/([^/]+)/assets$", path)
-        if m:
-            doc_id = unquote(m.group(1))
-            with _lock:
-                _, folder = load_doc(doc_id)
-            if not folder:
-                self._send_error_json(404, "Document not found")
-                return
-            self._handle_asset_upload(doc_id, folder)
-            return
-
         self._send_error_json(404, "Endpoint not found")
-
-    def _handle_asset_upload(self, doc_id, folder):
-        ctype = self.headers.get("Content-Type", "")
-        m = re.search(r"boundary=(.+)", ctype)
-        length = int(self.headers.get("Content-Length", 0) or 0)
-        if "multipart/form-data" not in ctype or not m or length == 0:
-            self._send_error_json(400, "Invalid upload: expected multipart/form-data")
-            return
-        boundary = m.group(1).strip('"').encode("utf-8")
-        raw = self.rfile.read(length)
-        filename, filedata = parse_multipart_file(raw, boundary)
-        if filedata is None:
-            self._send_error_json(400, "No file found in upload")
-            return
-        safe_name = sanitize_name(filename or "image")
-        base, ext = os.path.splitext(safe_name)
-        unique_name = f"{base}-{uuid.uuid4().hex[:8]}{ext or '.png'}"
-        assets_dir = os.path.join(DOCS_DIR, folder, ASSETS_DIR)
-        os.makedirs(assets_dir, exist_ok=True)
-        dest = os.path.join(assets_dir, unique_name)
-        with open(dest, "wb") as f:
-            f.write(filedata)
-        url = f"/api/documents/{doc_id}/assets/{unique_name}"
-        self._send_json(201, {"url": url, "filename": unique_name})
 
     def do_PUT(self):
         parsed = urlparse(self.path)
@@ -480,25 +428,6 @@ def send_to_trash(path):
             _trash_local_fallback(path)
     except Exception:
         _trash_local_fallback(path)
-
-def parse_multipart_file(raw, boundary):
-    delimiter = b"--" + boundary
-    parts = raw.split(delimiter)
-    for part in parts:
-        part = part.strip(b"\r\n")
-        if not part or part == b"--":
-            continue
-        if b"\r\n\r\n" not in part:
-            continue
-        headers_raw, content = part.split(b"\r\n\r\n", 1)
-        headers_text = headers_raw.decode("utf-8", errors="ignore")
-        if "filename=" not in headers_text:
-            continue
-        fm = re.search(r'filename="([^"]*)"', headers_text)
-        filename = fm.group(1) if fm else "file"
-        content = content.rstrip(b"\r\n")
-        return filename, content
-    return None, None
 
 def open_browser_delayed():
     time.sleep(0.8)

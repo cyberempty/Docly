@@ -42,7 +42,6 @@
   const toolbar = el("toolbar");
   const richEditor = el("richEditor");
   const newDocBtn = el("newDocBtn");
-  const imageInput = el("imageInput");
   const themeToggle = el("themeToggle");
   const helpBtn = el("helpBtn");
   const fontSizeInput = el("fontSizeInput");
@@ -154,7 +153,6 @@
     themeToggle.textContent = next === "dark" ? "☾" : "☀";
   });
 
-  helpBtn.addEventListener("click", showHelpDialog);
   el("modalClose").addEventListener("click", () => modalCancel.click());
 
   async function loadDocuments() {
@@ -396,7 +394,9 @@
 
     renderTags();
 
-    richEditor.innerHTML = doc.content || "";
+    richEditor.innerHTML = (doc.content || "").replace(/ class="cell-sel"/g, "");
+    richEditor.querySelectorAll("img").forEach((img) => img.remove());   // images are not supported
+    if (window.__doclyAfterOpen) window.__doclyAfterOpen();
 
     renderList();
   }
@@ -479,7 +479,7 @@
     if (!state.currentDoc || !state.currentId) return;
     clearTimeout(state.saveTimer);
     const doc = state.currentDoc;
-    doc.content = richEditor.innerHTML;
+    doc.content = contentHtml();
     try {
       const updated = await api("/api/documents/" + encodeURIComponent(state.currentId), {
         method: "PUT",
@@ -511,265 +511,7 @@
 
   richEditor.addEventListener("input", scheduleSave);
 
-  document.addEventListener("keydown", async (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-      e.preventDefault();
-      doSave(true);
-      showToast("Document saved");
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
-      e.preventDefault();
-      newDocBtn.click();
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
-      e.preventDefault();
-      activeSearch().focus();
-      showToast("Search document to open");
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        window.print();
-      } else {
-        showToast("Open a document to print");
-      }
-    }
-
-    if (e.key === "F1") {
-      e.preventDefault();
-      showHelpDialog();
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
-      e.preventDefault();
-      activeSearch().focus();
-    }
-    
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        showFindReplaceDialog();
-      } else {
-        showToast("Open a document for find and replace");
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
-      if (state.currentDoc) {
-        focusRich();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") {
-      if (state.currentDoc) {
-        focusRich();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "u") {
-      if (state.currentDoc) {
-        focusRich();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        document.execCommand("justifyLeft");
-        scheduleSave();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "e") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        document.execCommand("justifyCenter");
-        scheduleSave();
-      }
-    }
-    
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        document.execCommand("justifyRight");
-        scheduleSave();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "j") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        document.execCommand("justifyFull");
-        scheduleSave();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "m") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        document.execCommand("indent");
-        scheduleSave();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "m") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        document.execCommand("outdent");
-        scheduleSave();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === "1") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        applyLineSpacing("1.0");
-        scheduleSave();
-      }
-    }
-    
-    if ((e.ctrlKey || e.metaKey) && e.key === "2") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        applyLineSpacing("2.0");
-        scheduleSave();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === "5") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        applyLineSpacing("1.5");
-        scheduleSave();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && (e.key === "]" || (e.shiftKey && (e.key === ">" || e.key === ".")))) {
-      e.preventDefault();
-      if (state.currentDoc) stepFontSize(1);
-    }
-
-    if ((e.ctrlKey || e.metaKey) && (e.key === "[" || (e.shiftKey && (e.key === "<" || e.key === ",")))) {
-      e.preventDefault();
-      if (state.currentDoc) stepFontSize(-1);
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        showFontDialog();
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "l") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        document.execCommand("insertUnorderedList");
-        scheduleSave();
-      }
-    }
-    
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "g") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        const position = await showModal("Go to position", "Enter character position:", "0", true);
-        if (position !== null && position !== "") {
-          const pos = parseInt(position, 10);
-          if (!isNaN(pos)) {
-            const range = document.createRange();
-            const selection = window.getSelection();
-
-            try {
-              range.setStart(richEditor, 0);
-              range.setEnd(richEditor, 0);
-
-              let charCount = 0;
-              let found = false;
-
-              function traverseNodes(node) {
-                if (found) return;
-
-                if (node.nodeType === Node.TEXT_NODE) {
-                  if (charCount + node.length >= pos) {
-                    range.setStart(node, pos - charCount);
-                    range.setEnd(node, pos - charCount);
-                    found = true;
-                  } else {
-                    charCount += node.length;
-                  }
-                } else if (node.nodeType === Node.ELEMENT_NODE) {
-                  for (let child of node.childNodes) {
-                    traverseNodes(child);
-                    if (found) return;
-                  }
-                }
-              }
-
-              traverseNodes(richEditor);
-
-              if (found) {
-                selection.removeAllRanges();
-                selection.addRange(range);
-                richEditor.focus();
-              } else {
-                showToast("Position not found");
-              }
-            } catch (err) {
-              showToast("Navigation error");
-            }
-          }
-        }
-      }
-    }
-    
-    if ((e.ctrlKey || e.metaKey) && e.key === "Home") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        richEditor.focus();
-        const range = document.createRange();
-        range.selectNodeContents(richEditor);
-        range.collapse(true);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === "End") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        richEditor.focus();
-        const range = document.createRange();
-        range.selectNodeContents(richEditor);
-        range.collapse(false);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-    }
-
-    if ((e.ctrlKey || e.metaKey) && e.key === " ") {
-      e.preventDefault();
-      if (state.currentDoc) {
-        focusRich();
-        document.execCommand("removeFormat");
-        scheduleSave();
-      }
-    }
-  });
+  /* keyboard shortcuts: see the "Keyboard shortcuts (Google Docs style)" section below */
 
   let lastSavedTitle = "";
   titleInput.addEventListener("input", fitTitle);
@@ -886,6 +628,7 @@
   const activeSearch = () => (appEl.classList.contains("home-mode") ? homeSearchInput : searchInput);
 
   function focusRich() { richEditor.focus(); }
+  const contentHtml = () => richEditor.innerHTML.replace(/ class="cell-sel"/g, "");
 
   /* ---------------- Selection helpers ---------------- */
   let savedRange = null;
@@ -1154,7 +897,7 @@
     plus.title = "Custom color";
     plus.textContent = "+";
     plus.addEventListener("click", () => {
-      cpNative.value = "#4a86e8";
+      cpNative.value = "#000000";
       cpNative.onchange = () => applyColor(mode, cpNative.value);
       cpNative.click();
     });
@@ -1209,7 +952,7 @@
     el("codeBtn").classList.toggle("active", !!(n && n.closest && n.closest("pre")));
 
     const blk = (document.queryCommandValue("formatBlock") || "").toUpperCase().replace(/[<>]/g, "");
-    blockSelect.value = ["H1", "H2", "H3", "BLOCKQUOTE"].includes(blk) ? blk : "P";
+    blockSelect.value = currentBlockStyle(blk);
     syncFontFamily();
     if (document.activeElement !== fontSizeInput) fontSizeInput.value = fmtPt(currentFontSizePt());
     updateColorBars();
@@ -1229,10 +972,7 @@
   });
 
   blockSelect.addEventListener("change", () => {
-    focusRich();
-    document.execCommand("formatBlock", false, blockSelect.value);
-    syncToolbar();
-    scheduleSave();
+    applyBlockStyle(blockSelect.value);
   });
 
   el("undoBtn").addEventListener("click", () => { focusRich(); document.execCommand("undo"); scheduleSave(); });
@@ -1321,12 +1061,11 @@
   table { border-collapse: collapse; width: 100%; }
   td, th { border: 1px solid #ddd; padding: 8px; }
   th { background: #f4f4f4; }
-  img { max-width: 100%; }
 </style>
 </head>
 <body>
 <h1>${title}</h1>
-${richEditor.innerHTML}
+${contentHtml()}
 </body>
 </html>`;
     downloadBlob(new Blob([page], { type: "text/html;charset=utf-8" }), exportName("html"));
@@ -1344,7 +1083,7 @@ ${richEditor.innerHTML}
     if (n.nodeType !== 1) return "";
     const tag = n.tagName;
     if (tag === "BR") return "  \n";
-    if (tag === "IMG") return `![${n.getAttribute("alt") || ""}](${n.getAttribute("src") || ""})`;
+    if (tag === "IMG") return "";
     if (tag === "CODE") return n.textContent ? "`" + n.textContent + "`" : "";
     let s = Array.from(n.childNodes).map(mdInline).join("");
     const css = n.style || {};
@@ -1549,7 +1288,7 @@ ${richEditor.innerHTML}
       if (n.nodeType !== 1) return;
       const tag = n.tagName;
       if (tag === "BR") { ensure(props).runs.push({ br: true }); return; }
-      if (tag === "IMG") { ensure(props).runs.push({ text: "[image]", ...st }); return; }
+      if (tag === "IMG") return;
       if (tag === "HR") { flush(); out.push({ type: "hr" }); return; }
       if (tag === "TABLE") {
         flush();
@@ -1582,7 +1321,7 @@ ${richEditor.innerHTML}
     const m = rulerMetrics();
     const tw = (px) => Math.round(px * 15);
     return {
-      w: 12240, h: 15840,
+      ...(window.__pagePaper ? window.__pagePaper() : { w: 12240, h: 15840 }),
       top: tw(m.t), bottom: tw(m.b), left: tw(m.l), right: tw(m.r),
     };
   }
@@ -1994,7 +1733,7 @@ ${richEditor.innerHTML}
     const title = escXml(state.currentDoc.title || "Document");
     const doc = document.implementation.createHTMLDocument("");
     const box = doc.createElement("div");
-    box.innerHTML = richEditor.innerHTML;
+    box.innerHTML = contentHtml();
 
     const toc = [];
     box.querySelectorAll("h1, h2, h3").forEach((h, i) => {
@@ -2002,33 +1741,19 @@ ${richEditor.innerHTML}
       toc.push({ id: h.id, text: h.textContent.trim() || "Untitled" });
     });
 
-    const EXT = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/svg+xml": "svg", "image/webp": "webp" };
-    const images = [];
-    box.querySelectorAll("img").forEach((img, i) => {
-      const m = (img.getAttribute("src") || "").match(/^data:(image\/[\w.+-]+);base64,([\s\S]*)$/);
-      if (!m) return;
-      try {
-        const bin = atob(m[2]);
-        const bytes = new Uint8Array(bin.length);
-        for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
-        const name = `images/img${i + 1}.${EXT[m[1]] || "img"}`;
-        images.push({ name, mime: m[1], data: bytes });
-        img.setAttribute("src", name);
-        if (!img.hasAttribute("alt")) img.setAttribute("alt", "");
-      } catch (_) {}
-    });
+    box.querySelectorAll("img").forEach((img) => img.remove());
     box.removeAttribute("xmlns");
     const bodyXml = new XMLSerializer().serializeToString(box);
 
     const uid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
     const chapter = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en"><head><meta charset="utf-8"/><title>${title}</title><style>body{font-family:serif;line-height:1.5}h1,h2,h3{font-weight:normal}blockquote{border-left:3px solid #999;margin-left:0;padding-left:1em;color:#555}pre{background:#f3f3f3;padding:.6em;white-space:pre-wrap}table{border-collapse:collapse}td,th{border:1px solid #999;padding:.3em .5em}img{max-width:100%}</style></head><body><h1>${title}</h1>${bodyXml}</body></html>`;
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en"><head><meta charset="utf-8"/><title>${title}</title><style>body{font-family:serif;line-height:1.5}h1,h2,h3{font-weight:normal}blockquote{border-left:3px solid #999;margin-left:0;padding-left:1em;color:#555}pre{background:#f3f3f3;padding:.6em;white-space:pre-wrap}table{border-collapse:collapse}td,th{border:1px solid #999;padding:.3em .5em}</style></head><body><h1>${title}</h1>${bodyXml}</body></html>`;
     const navItems = [`<li><a href="chapter.xhtml">${title}</a></li>`, ...toc.map((t) => `<li><a href="chapter.xhtml#${t.id}">${escXml(t.text)}</a></li>`)].join("");
     const nav = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en" lang="en"><head><meta charset="utf-8"/><title>Contents</title></head><body><nav epub:type="toc" id="toc"><h1>Contents</h1><ol>${navItems}</ol></nav></body></html>`;
-    const imgManifest = images.map((im, i) => `<item id="img${i + 1}" href="${im.name}" media-type="${im.mime}"/>`).join("");
+    const imgManifest = "";
     const opf = `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="bookid">urn:uuid:${uid}</dc:identifier><dc:title>${title}</dc:title><dc:language>en</dc:language><meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z$/, "Z")}</meta></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>${imgManifest}</manifest><spine><itemref idref="chapter"/></spine></package>`;
     return makeZip([
@@ -2038,7 +1763,6 @@ ${richEditor.innerHTML}
       { name: "OEBPS/content.opf", data: opf },
       { name: "OEBPS/nav.xhtml", data: nav },
       { name: "OEBPS/chapter.xhtml", data: chapter },
-      ...images.map((im) => ({ name: "OEBPS/" + im.name, data: im.data })),
     ], "application/epub+zip");
   }
   function doExportEpub() {
@@ -2070,21 +1794,13 @@ ${richEditor.innerHTML}
       title: d.title || "",
       tags: d.tags || [],
       favorite: !!d.favorite,
-      content: richEditor.innerHTML,
+      content: contentHtml(),
       exportedAt: new Date().toISOString(),
     };
     downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), exportName("json"));
     showToast("Exported as backup (JSON)");
   }
 
-
-  el("linkBtn").addEventListener("click", async () => {
-    const url = await showModal("Insert link", "Enter link URL:", "https://", true);
-    if (!url) return;
-    focusRich();
-    document.execCommand("createLink", false, url);
-    scheduleSave();
-  });
 
   el("codeBtn").addEventListener("click", () => {
     focusRich();
@@ -2093,52 +1809,6 @@ ${richEditor.innerHTML}
     const html = `<pre><code>${escapeHtml(text)}</code></pre><p><br></p>`;
     document.execCommand("insertHTML", false, html);
     scheduleSave();
-  });
-
-  el("tableBtn").addEventListener("click", async () => {
-    focusRich();
-    const rowsStr = await showModal("Table rows", "Number of rows:", "3", true);
-    const colsStr = await showModal("Table columns", "Number of columns:", "3", true);
-    let rows = parseInt(rowsStr, 10) || 3;
-    let cols = parseInt(colsStr, 10) || 3;
-    rows = Math.min(Math.max(rows, 1), 20);
-    cols = Math.min(Math.max(cols, 1), 10);
-    let html = "<table><tbody>";
-    for (let r = 0; r < rows; r++) {
-      html += "<tr>";
-      for (let c = 0; c < cols; c++) html += "<td>&nbsp;</td>";
-      html += "</tr>";
-    }
-    html += "</tbody></table><p><br></p>";
-    document.execCommand("insertHTML", false, html);
-    scheduleSave();
-  });
-
-  el("imageBtn").addEventListener("click", () => {
-    if (!state.currentId) return;
-    imageInput.click();
-  });
-
-  imageInput.addEventListener("change", async () => {
-    const file = imageInput.files[0];
-    imageInput.value = "";
-    if (!file || !state.currentId) return;
-    const formData = new FormData();
-    formData.append("file", file, file.name);
-    try {
-      showToast("Uploading image…");
-      const res = await fetch("/api/documents/" + encodeURIComponent(state.currentId) + "/assets", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload error");
-      focusRich();
-      document.execCommand("insertHTML", false, `<img src="${data.url}" alt="image"><p><br></p>`);
-      scheduleSave();
-    } catch (err) {
-      showToast("Image upload error: " + err.message);
-    }
   });
 
   window.addEventListener("beforeunload", (e) => {
@@ -2173,7 +1843,7 @@ ${richEditor.innerHTML}
     }
   }
 
-  const BLOCK_RE = /^(P|DIV|H1|H2|H3|LI|BLOCKQUOTE|PRE)$/;
+  const BLOCK_RE = /^(P|DIV|H1|H2|H3|H4|H5|H6|LI|BLOCKQUOTE|PRE)$/;
   function blockOf(n) {
     while (n && n !== richEditor) {
       if (n.nodeType === 1 && BLOCK_RE.test(n.tagName)) return n;
@@ -2263,39 +1933,6 @@ ${richEditor.innerHTML}
   zoomSelect.addEventListener("change", () => {
     pageArea.style.zoom = zoomSelect.value;
   });
-
-  function showHelpDialog() {
-    const helpText = `FILE
-Ctrl+N        New document
-Ctrl+O        Search documents
-Ctrl+S        Save
-Ctrl+P        Print / save as PDF
-F1            Help
-
-TEXT
-Ctrl+B / I / U   Bold / italic / underline
-Ctrl+D        Font name
-Ctrl+Shift+.  Increase font size
-Ctrl+Shift+,  Decrease font size
-Ctrl+Space    Clear formatting
-Ctrl+Z / Y    Undo / redo
-
-PARAGRAPH
-Ctrl+L / E / R / J   Left / center / right / justify
-Ctrl+M        Increase indent
-Ctrl+Shift+M  Decrease indent
-Ctrl+1 / 5 / 2   Line spacing 1.0 / 1.5 / 2.0
-Ctrl+Shift+L  Bulleted list
-
-FIND AND NAVIGATE
-Ctrl+F        Search documents
-Ctrl+H        Find and replace
-Ctrl+G        Go to position
-Ctrl+Home     Start of document
-Ctrl+End      End of document`;
-    showModal("Keyboard shortcuts", helpText, "", false);
-    modal.classList.add("modal-help");
-  }
 
   async function showFontDialog() {
     const fontName = await showModal("Font", "Font name (e.g. Arial, Calibri, Times New Roman):", "Arial", true);
@@ -2585,6 +2222,1315 @@ Ctrl+End      End of document`;
   brandHome.addEventListener("click", goHome);
   brandHome.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goHome(); } });
 
+  /* =====================================================================
+     Docly additions
+     ===================================================================== */
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (_) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  };
+  const needOpenDoc = () => { if (!state.currentDoc) { showToast("Open a document first"); return false; } return true; };
+
+  /* ---------------- Paragraph styles (Normal, Title, Subtitle, Heading 1-6) ---------------- */
+  function currentBlockStyle(blk) {
+    const n = activeElement();
+    const p = n && n.closest ? n.closest("p") : null;
+    if (p && p.classList.contains("doc-title")) return "TITLE";
+    if (p && p.classList.contains("doc-subtitle")) return "SUBTITLE";
+    return ["H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE"].includes(blk) ? blk : "P";
+  }
+  function applyBlockStyle(style) {
+    if (!needOpenDoc()) return;
+    focusRich();
+    restoreSelection();
+    const tag = style === "TITLE" || style === "SUBTITLE" ? "P" : style;
+    document.execCommand("formatBlock", false, tag);
+    selectedBlocks().forEach((b) => {
+      if (b.tagName !== "P") { b.classList.remove("doc-title", "doc-subtitle"); return; }
+      b.classList.remove("doc-title", "doc-subtitle");
+      if (style === "TITLE") b.classList.add("doc-title");
+      if (style === "SUBTITLE") b.classList.add("doc-subtitle");
+      if (!b.getAttribute("class")) b.removeAttribute("class");
+    });
+    blockSelect.value = style;
+    syncToolbar();
+    scheduleSave();
+  }
+
+  /* ---------------- Small floating helpers ---------------- */
+  function placeFloating(node, x, y) {
+    node.classList.remove("hidden");
+    const w = node.offsetWidth, h = node.offsetHeight;
+    node.style.left = Math.max(8, Math.min(x, window.innerWidth - w - 8)) + "px";
+    node.style.top = Math.max(8, Math.min(y, window.innerHeight - h - 8)) + "px";
+  }
+
+  // Generic form dialog: fields = [{key,label,type:"number|text|select",value,options,min,max,step}]
+  function formDialog(title, fields, okLabel = "OK") {
+    return new Promise((resolve) => {
+      const ov = document.createElement("div");
+      ov.className = "modal-overlay";
+      const box = document.createElement("div");
+      box.className = "modal";
+      box.innerHTML = '<div class="modal-header"><h3></h3><button class="modal-close" type="button">&times;</button></div><div class="modal-body"></div>';
+      box.querySelector("h3").textContent = title;
+      const body = box.querySelector(".modal-body");
+      const inputs = {};
+      fields.forEach((f) => {
+        const row = document.createElement("label");
+        row.className = "form-row";
+        const sp = document.createElement("span");
+        sp.textContent = f.label;
+        let inp;
+        if (f.type === "select") {
+          inp = document.createElement("select");
+          f.options.forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; inp.appendChild(o); });
+        } else {
+          inp = document.createElement("input");
+          inp.type = f.type || "text";
+          if (f.min !== undefined) inp.min = f.min;
+          if (f.max !== undefined) inp.max = f.max;
+          if (f.step !== undefined) inp.step = f.step;
+        }
+        inp.value = f.value;
+        inputs[f.key] = inp;
+        row.appendChild(sp); row.appendChild(inp);
+        body.appendChild(row);
+      });
+      const act = document.createElement("div");
+      act.className = "form-actions";
+      act.innerHTML = '<button type="button" class="modal-btn modal-btn-cancel">Cancel</button><button type="button" class="modal-btn modal-btn-ok"></button>';
+      act.querySelector(".modal-btn-ok").textContent = okLabel;
+      body.appendChild(act);
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+      const done = (ok) => {
+        document.removeEventListener("keydown", onKey, true);
+        const out = {};
+        if (ok) Object.keys(inputs).forEach((k) => { out[k] = inputs[k].value; });
+        ov.remove();
+        resolve(ok ? out : null);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") { e.stopPropagation(); done(false); }
+        else if (e.key === "Enter" && e.target.tagName !== "SELECT") { e.preventDefault(); done(true); }
+      };
+      document.addEventListener("keydown", onKey, true);
+      ov.addEventListener("mousedown", (e) => { if (e.target === ov) done(false); });
+      box.querySelector(".modal-close").onclick = () => done(false);
+      act.querySelector(".modal-btn-cancel").onclick = () => done(false);
+      act.querySelector(".modal-btn-ok").onclick = () => done(true);
+      const first = body.querySelector("input,select");
+      if (first) first.focus();
+    });
+  }
+
+  /* =====================================================================
+     TABLES  (Google Docs style: size picker, row/column tools, merge/split, ...)
+     ===================================================================== */
+  const tablePicker = el("tablePicker");
+  const TP_ROWS = 8, TP_COLS = 10;
+  (function buildPicker() {
+    const grid = document.createElement("div");
+    grid.className = "tp-grid";
+    const label = document.createElement("div");
+    label.className = "tp-label";
+    label.textContent = "Insert table";
+    for (let r = 1; r <= TP_ROWS; r++) {
+      for (let c = 1; c <= TP_COLS; c++) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "tp-cell";
+        b.dataset.r = r; b.dataset.c = c;
+        b.setAttribute("aria-label", r + " by " + c);
+        grid.appendChild(b);
+      }
+    }
+    const paint = (r, c) => {
+      grid.querySelectorAll(".tp-cell").forEach((b) => b.classList.toggle("on", +b.dataset.r <= r && +b.dataset.c <= c));
+      label.textContent = r ? c + " × " + r : "Insert table";
+    };
+    grid.addEventListener("mouseover", (e) => { const b = e.target.closest(".tp-cell"); if (b) paint(+b.dataset.r, +b.dataset.c); });
+    grid.addEventListener("mouseleave", () => paint(0, 0));
+    grid.addEventListener("click", (e) => {
+      const b = e.target.closest(".tp-cell");
+      if (!b) return;
+      closeTablePicker();
+      insertTable(+b.dataset.r, +b.dataset.c);
+    });
+    tablePicker.appendChild(grid);
+    tablePicker.appendChild(label);
+  })();
+  tablePicker.addEventListener("mousedown", (e) => e.preventDefault());
+  function closeTablePicker() { tablePicker.classList.add("hidden"); el("tableBtn").classList.remove("open"); }
+  function openTablePicker(x, y) {
+    closeColorPanel(); closeSizeMenu();
+    tablePicker.querySelectorAll(".tp-cell.on").forEach((b) => b.classList.remove("on"));
+    placeFloating(tablePicker, x, y);
+  }
+  el("tableBtn").addEventListener("click", () => {
+    if (!needOpenDoc()) return;
+    if (!tablePicker.classList.contains("hidden")) { closeTablePicker(); return; }
+    closeMenu();
+    const r = el("tableBtn").getBoundingClientRect();
+    el("tableBtn").classList.add("open");
+    openTablePicker(r.left, r.bottom + 4);
+  });
+  document.addEventListener("mousedown", (e) => {
+    if (!tablePicker.contains(e.target) && !e.target.closest("#tableBtn")) closeTablePicker();
+  });
+
+  const cellOf = (n) => {
+    while (n && n !== richEditor) {
+      if (n.nodeType === 1 && (n.tagName === "TD" || n.tagName === "TH")) return n;
+      n = n.parentNode;
+    }
+    return null;
+  };
+  function gridOf(table) {
+    const g = [];
+    Array.from(table.rows).forEach((tr, ri) => {
+      g[ri] = g[ri] || [];
+      let ci = 0;
+      Array.from(tr.cells).forEach((cell) => {
+        while (g[ri][ci]) ci++;
+        const rs = cell.rowSpan || 1, cs = cell.colSpan || 1;
+        for (let a = 0; a < rs; a++) {
+          g[ri + a] = g[ri + a] || [];
+          for (let b = 0; b < cs; b++) g[ri + a][ci + b] = cell;
+        }
+        ci += cs;
+      });
+    });
+    return g;
+  }
+  const ncolsOf = (g) => g.reduce((m, r) => Math.max(m, r.length), 0);
+  function posOf(table, cell) {
+    const g = gridOf(table);
+    for (let r = 0; r < g.length; r++) for (let c = 0; c < (g[r] || []).length; c++) if (g[r][c] === cell) return { r, c, g };
+    return null;
+  }
+
+  let cellSel = null;                       // { table, r1, c1, r2, c2 }
+  function clearCellSel() {
+    richEditor.querySelectorAll(".cell-sel").forEach((c) => { c.classList.remove("cell-sel"); if (!c.getAttribute("class")) c.removeAttribute("class"); });
+    richEditor.classList.remove("selecting-cells");
+    cellSel = null;
+  }
+  function paintCellSel() {
+    richEditor.querySelectorAll(".cell-sel").forEach((c) => c.classList.remove("cell-sel"));
+    if (!cellSel) return;
+    const g = gridOf(cellSel.table);
+    for (let r = cellSel.r1; r <= cellSel.r2; r++) for (let c = cellSel.c1; c <= cellSel.c2; c++) if (g[r] && g[r][c]) g[r][c].classList.add("cell-sel");
+    richEditor.classList.add("selecting-cells");
+  }
+  function selectRect(table, a, b) {
+    const g = gridOf(table);
+    const pa = posOf(table, a), pb = posOf(table, b);
+    if (!pa || !pb) return;
+    let r1 = Math.min(pa.r, pb.r), r2 = Math.max(pa.r + a.rowSpan - 1, pb.r + b.rowSpan - 1);
+    let c1 = Math.min(pa.c, pb.c), c2 = Math.max(pa.c + a.colSpan - 1, pb.c + b.colSpan - 1);
+    // grow the rectangle until it no longer cuts a merged cell in half
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) {
+        const cell = g[r] && g[r][c]; if (!cell) continue;
+        const p = posOf(table, cell);
+        const nr1 = Math.min(r1, p.r), nr2 = Math.max(r2, p.r + cell.rowSpan - 1);
+        const nc1 = Math.min(c1, p.c), nc2 = Math.max(c2, p.c + cell.colSpan - 1);
+        if (nr1 !== r1 || nr2 !== r2 || nc1 !== c1 || nc2 !== c2) { r1 = nr1; r2 = nr2; c1 = nc1; c2 = nc2; changed = true; }
+      }
+    }
+    cellSel = { table, r1, c1, r2, c2 };
+    paintCellSel();
+  }
+
+  function currentCell() {
+    if (cellSel) { const g = gridOf(cellSel.table); return g[cellSel.r1][cellSel.c1]; }
+    const r = selectionInEditor() || savedRange;
+    if (!r) return null;
+    const c = cellOf(r.startContainer);
+    return c && richEditor.contains(c) ? c : null;
+  }
+  const inTable = () => !!currentCell();
+  function tableCtx() {
+    const cell = currentCell();
+    if (!cell) { showToast("Click inside a table first"); return null; }
+    const table = cell.closest("table");
+    const p = posOf(table, cell);
+    let r1 = p.r, r2 = p.r + cell.rowSpan - 1, c1 = p.c, c2 = p.c + cell.colSpan - 1;
+    if (cellSel && cellSel.table === table) { r1 = cellSel.r1; r2 = cellSel.r2; c1 = cellSel.c1; c2 = cellSel.c2; }
+    return { cell, table, r1, r2, c1, c2 };
+  }
+  function selectedCells(ctx) {
+    const g = gridOf(ctx.table), set = new Set();
+    for (let r = ctx.r1; r <= ctx.r2; r++) for (let c = ctx.c1; c <= ctx.c2; c++) if (g[r] && g[r][c]) set.add(g[r][c]);
+    return Array.from(set);
+  }
+  function placeCaretIn(cell, selectAll) {
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    if (!selectAll) range.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(range);
+    richEditor.focus({ preventScroll: true });
+  }
+  const newCell = (tag = "TD") => { const c = document.createElement(tag); c.innerHTML = "<br>"; return c; };
+
+  // ---- column widths live in a <colgroup>
+  function ensureColgroup(table) {
+    const n = ncolsOf(gridOf(table));
+    let cg = Array.from(table.children).find((c) => c.tagName === "COLGROUP");
+    if (!cg) { cg = document.createElement("colgroup"); table.insertBefore(cg, table.firstChild); }
+    while (cg.children.length < n) cg.appendChild(document.createElement("col"));
+    while (cg.children.length > n) cg.lastChild.remove();
+    return cg;
+  }
+  function colPx(table, g, c) {
+    for (let r = 0; r < g.length; r++) {
+      const cell = g[r][c];
+      if (cell && (cell.colSpan || 1) === 1) return cell.offsetWidth;
+    }
+    return table.offsetWidth / Math.max(1, ncolsOf(g));
+  }
+  function ensureColPx(table) {
+    const cg = ensureColgroup(table), g = gridOf(table);
+    Array.from(cg.children).forEach((col, c) => { col.style.width = Math.max(24, Math.round(colPx(table, g, c))) + "px"; });
+    return cg;
+  }
+  function normalizeCols(table) {
+    const cg = ensureColgroup(table);
+    const cols = Array.from(cg.children);
+    const ws = cols.map((c) => c.style.width);
+    if (ws.every((w) => w.endsWith("%"))) {
+      const v = ws.map(parseFloat), tot = v.reduce((a, b) => a + b, 0) || 1;
+      cols.forEach((c, i) => { c.style.width = (v[i] / tot * 100).toFixed(3) + "%"; });
+    } else if (ws.every((w) => w.endsWith("px"))) {
+      table.style.width = ws.reduce((a, w) => a + parseFloat(w), 0) + "px";
+      table.style.maxWidth = "100%";
+    } else {
+      const eq = (100 / cols.length).toFixed(3) + "%";
+      cols.forEach((c) => { c.style.width = eq; });
+      table.style.width = "100%";
+    }
+  }
+
+  function insertTable(rows, cols) {
+    if (!needOpenDoc()) return;
+    restoreSelection(); focusRich();
+    if (currentCell()) { showToast("Tables cannot be nested"); return; }
+    const w = (100 / cols).toFixed(3) + "%";
+    let html = '<table style="width:100%"><colgroup>' + ('<col style="width:' + w + '">').repeat(cols) + "</colgroup><tbody>";
+    for (let r = 0; r < rows; r++) html += "<tr>" + "<td><br></td>".repeat(cols) + "</tr>";
+    html += "</tbody></table><p><br></p>";
+    const before = new Set(richEditor.querySelectorAll("table"));
+    document.execCommand("insertHTML", false, html);
+    const t = Array.from(richEditor.querySelectorAll("table")).find((x) => !before.has(x));
+    if (t) {
+      const cg = ensureColgroup(t);
+      Array.from(cg.children).forEach((c) => { c.style.width = w; });
+      t.style.width = "100%";
+      const first = t.querySelector("td");
+      if (first) placeCaretIn(first, false);
+    }
+    scheduleSave();
+  }
+
+  // ---- row / column operations
+  function insertRowAt(table, idx, after) {
+    const g = gridOf(table);
+    const at = after ? idx + 1 : idx;
+    const tr = document.createElement("tr");
+    const seen = new Set();
+    const n = ncolsOf(g);
+    for (let c = 0; c < n; c++) {
+      const above = g[at - 1] && g[at - 1][c], below = g[at] && g[at][c];
+      if (above && below && above === below) {
+        if (!seen.has(above)) { above.rowSpan = (above.rowSpan || 1) + 1; seen.add(above); }
+        continue;
+      }
+      const ref = (after ? above : below) || above || below;
+      const td = newCell(ref && ref.tagName === "TH" && !above ? "TH" : "TD");
+      tr.appendChild(td);
+    }
+    const rows = Array.from(table.rows);
+    if (at >= rows.length) rows[rows.length - 1].parentNode.appendChild(tr);
+    else rows[at].parentNode.insertBefore(tr, rows[at]);
+    return tr;
+  }
+  function deleteRowAt(table, r) {
+    const g = gridOf(table), tr = table.rows[r];
+    if (!tr) return;
+    const done = new Set();
+    for (let c = 0; c < g[r].length; c++) {
+      const cell = g[r][c];
+      if (!cell || done.has(cell)) continue;
+      done.add(cell);
+      if ((cell.rowSpan || 1) > 1) {
+        if (cell.parentNode === tr) {
+          const next = table.rows[r + 1];
+          let ref = null;
+          for (let cc = c + 1; cc < g[r + 1].length; cc++) { const x = g[r + 1][cc]; if (x && x.parentNode === next) { ref = x; break; } }
+          cell.rowSpan -= 1;
+          next.insertBefore(cell, ref);
+        } else cell.rowSpan -= 1;
+      }
+    }
+    tr.remove();
+  }
+  function insertColAt(table, c, after) {
+    const g = gridOf(table);
+    const cg = ensureColgroup(table);
+    const at = after ? c + 1 : c;
+    const seen = new Set();
+    g.forEach((row, r) => {
+      const left = row[at - 1], right = row[at];
+      if (left && right && left === right) {
+        if (!seen.has(left)) { left.colSpan = (left.colSpan || 1) + 1; seen.add(left); }
+        return;
+      }
+      const tr = table.rows[r];
+      let ref = null;
+      for (let cc = at; cc < row.length; cc++) { const x = row[cc]; if (x && x.parentNode === tr) { ref = x; break; } }
+      const ref0 = left || right;
+      tr.insertBefore(newCell(ref0 && ref0.tagName === "TH" ? "TH" : "TD"), ref);
+    });
+    const neighbour = cg.children[c];
+    const col = document.createElement("col");
+    col.style.width = (neighbour && neighbour.style.width) || "";
+    cg.insertBefore(col, cg.children[at] || null);
+    normalizeCols(table);
+  }
+  function deleteColAt(table, c) {
+    const g = gridOf(table);
+    const cg = ensureColgroup(table);
+    const done = new Set();
+    g.forEach((row) => {
+      const cell = row[c];
+      if (!cell || done.has(cell)) return;
+      done.add(cell);
+      if ((cell.colSpan || 1) > 1) cell.colSpan -= 1; else cell.remove();
+    });
+    if (cg.children[c]) cg.children[c].remove();
+    Array.from(table.rows).forEach((tr) => { if (!tr.cells.length) tr.remove(); });
+    normalizeCols(table);
+  }
+
+  const T = {
+    rowAbove() { const x = tableCtx(); if (!x) return; const n = x.r2 - x.r1 + 1; for (let i = 0; i < n; i++) insertRowAt(x.table, x.r1, false); done(x); },
+    rowBelow() { const x = tableCtx(); if (!x) return; const n = x.r2 - x.r1 + 1; for (let i = 0; i < n; i++) insertRowAt(x.table, x.r2, true); done(x); },
+    colLeft() { const x = tableCtx(); if (!x) return; const n = x.c2 - x.c1 + 1; for (let i = 0; i < n; i++) insertColAt(x.table, x.c1, false); done(x); },
+    colRight() { const x = tableCtx(); if (!x) return; const n = x.c2 - x.c1 + 1; for (let i = 0; i < n; i++) insertColAt(x.table, x.c2, true); done(x); },
+    delRow() {
+      const x = tableCtx(); if (!x) return;
+      const t = x.table, total = gridOf(t).length;
+      if (x.r2 - x.r1 + 1 >= total) return T.delTable();
+      for (let r = x.r2; r >= x.r1; r--) deleteRowAt(t, r);
+      clearCellSel(); focusAfter(t, x.r1); scheduleSave();
+    },
+    delCol() {
+      const x = tableCtx(); if (!x) return;
+      const t = x.table, total = ncolsOf(gridOf(t));
+      if (x.c2 - x.c1 + 1 >= total) return T.delTable();
+      for (let c = x.c2; c >= x.c1; c--) deleteColAt(t, c);
+      clearCellSel(); focusAfter(t, 0); scheduleSave();
+    },
+    delTable() {
+      const x = tableCtx(); if (!x) return;
+      const next = x.table.nextElementSibling;
+      x.table.remove(); clearCellSel();
+      if (!richEditor.firstElementChild) richEditor.innerHTML = "<p><br></p>";
+      scheduleSave();
+    },
+    merge() {
+      const x = tableCtx(); if (!x) return;
+      const cells = selectedCells(x);
+      if (cells.length < 2) { showToast("Select two or more cells (drag across them) to merge"); return; }
+      const g = gridOf(x.table), tl = g[x.r1][x.c1];
+      const parts = [];
+      cells.forEach((c) => {
+        if (c === tl) return;
+        const html = c.innerHTML.replace(/^(<br>)+$/i, "").trim();
+        if (html) parts.push(html);
+        c.remove();
+      });
+      if (parts.length) tl.innerHTML = (tl.innerHTML.replace(/^(<br>)+$/i, "").trim() ? tl.innerHTML + "<br>" : "") + parts.join("<br>");
+      tl.rowSpan = x.r2 - x.r1 + 1;
+      tl.colSpan = x.c2 - x.c1 + 1;
+      if (tl.rowSpan === 1) tl.removeAttribute("rowspan");
+      if (tl.colSpan === 1) tl.removeAttribute("colspan");
+      Array.from(x.table.rows).forEach((tr) => { if (!tr.cells.length && !gridOf(x.table).length) tr.remove(); });
+      clearCellSel(); placeCaretIn(tl, false); scheduleSave();
+    },
+    split() {
+      const x = tableCtx(); if (!x) return;
+      const cell = x.cell, rs = cell.rowSpan || 1, cs = cell.colSpan || 1;
+      if (rs === 1 && cs === 1) { showToast("This cell is not merged"); return; }
+      const p = posOf(x.table, cell), g = p.g;
+      cell.removeAttribute("rowspan"); cell.removeAttribute("colspan");
+      for (let a = 0; a < rs; a++) {
+        const tr = x.table.rows[p.r + a];
+        if (a === 0) {
+          let last = cell;
+          for (let b = 1; b < cs; b++) { const nc = newCell(cell.tagName); tr.insertBefore(nc, last.nextSibling); last = nc; }
+        } else {
+          let ref = null;
+          for (let cc = p.c + cs; cc < (g[p.r + a] || []).length; cc++) { const q = g[p.r + a][cc]; if (q && q.parentNode === tr) { ref = q; break; } }
+          for (let b = 0; b < cs; b++) tr.insertBefore(newCell(cell.tagName), ref);
+        }
+      }
+      clearCellSel(); placeCaretIn(cell, false); scheduleSave();
+    },
+    distRows() {
+      const x = tableCtx(); if (!x) return;
+      const rows = Array.from(x.table.rows);
+      const sel = rows.slice(x.r1, x.r2 + 1);
+      const use = sel.length > 1 ? sel : rows;
+      const h = Math.round(use.reduce((a, r) => a + r.offsetHeight, 0) / use.length);
+      use.forEach((r) => { r.style.height = h + "px"; });
+      scheduleSave();
+    },
+    distCols() {
+      const x = tableCtx(); if (!x) return;
+      const cg = ensureColgroup(x.table);
+      const eq = (100 / cg.children.length).toFixed(3) + "%";
+      Array.from(cg.children).forEach((c) => { c.style.width = eq; });
+      x.table.style.width = "100%";
+      scheduleSave();
+    },
+    vAlign(v) { const x = tableCtx(); if (!x) return; selectedCells(x).forEach((c) => { c.style.verticalAlign = v; }); scheduleSave(); },
+    hAlign(v) { const x = tableCtx(); if (!x) return; selectedCells(x).forEach((c) => { c.style.textAlign = v; }); scheduleSave(); },
+    bg(color) { const x = tableCtx(); if (!x) return; selectedCells(x).forEach((c) => { c.style.backgroundColor = color || ""; if (!c.getAttribute("style")) c.removeAttribute("style"); }); scheduleSave(); },
+    borderTargets(x) { return cellSel ? selectedCells(x) : Array.from(x.table.querySelectorAll("td,th")); },
+    borderColor(color) { const x = tableCtx(); if (!x) return; T.borderTargets(x).forEach((c) => { c.style.borderColor = color; if (!c.style.borderStyle) c.style.borderStyle = "solid"; if (!c.style.borderWidth) c.style.borderWidth = "1px"; }); scheduleSave(); },
+    borderWidth(px) {
+      const x = tableCtx(); if (!x) return;
+      T.borderTargets(x).forEach((c) => {
+        if (px === 0) { c.style.borderStyle = "none"; c.style.borderWidth = "0"; }
+        else { c.style.borderStyle = "solid"; c.style.borderWidth = px + "px"; if (!c.style.borderColor) c.style.borderColor = "#000"; }
+      });
+      scheduleSave();
+    },
+    async colWidth() {
+      const x = tableCtx(); if (!x) return;
+      const cg = ensureColPx(x.table);
+      const cur = parseFloat(cg.children[x.c1].style.width) || 100;
+      const v = await showModal("Column width", "Width in pixels:", String(Math.round(cur)), true);
+      const px = parseInt(v, 10);
+      if (!px) return;
+      for (let c = x.c1; c <= x.c2; c++) cg.children[c].style.width = Math.max(24, Math.min(2000, px)) + "px";
+      normalizeCols(x.table); scheduleSave();
+    },
+    async rowHeight() {
+      const x = tableCtx(); if (!x) return;
+      const cur = x.table.rows[x.r1].offsetHeight;
+      const v = await showModal("Minimum row height", "Height in pixels:", String(cur), true);
+      const px = parseInt(v, 10);
+      if (!px) return;
+      for (let r = x.r1; r <= x.r2; r++) x.table.rows[r].style.height = Math.max(10, Math.min(1000, px)) + "px";
+      scheduleSave();
+    },
+    async props() {
+      const x = tableCtx(); if (!x) return;
+      const t = x.table;
+      const align = t.style.marginLeft === "auto" && t.style.marginRight === "auto" ? "center" : t.style.marginLeft === "auto" ? "right" : "left";
+      const res = await formDialog("Table properties", [
+        { key: "w", label: "Table width (%)", type: "number", min: 10, max: 100, value: parseInt(t.style.width, 10) || 100 },
+        { key: "align", label: "Table alignment", type: "select", value: align, options: [["left", "Left"], ["center", "Center"], ["right", "Right"]] },
+        { key: "hdr", label: "Header row", type: "select", value: t.rows[0] && t.rows[0].cells[0] && t.rows[0].cells[0].tagName === "TH" ? "1" : "0", options: [["0", "No"], ["1", "Yes"]] },
+      ], "Apply");
+      if (!res) return;
+      const w = Math.max(10, Math.min(100, parseInt(res.w, 10) || 100));
+      t.style.width = w + "%"; t.style.maxWidth = "100%";
+      const cg = ensureColgroup(t);
+      const eq = (100 / cg.children.length).toFixed(3) + "%";
+      Array.from(cg.children).forEach((c) => { c.style.width = eq; });
+      t.style.marginLeft = res.align === "left" ? "" : "auto";
+      t.style.marginRight = res.align === "right" ? "" : res.align === "center" ? "auto" : "auto";
+      if (res.align === "left") { t.style.marginLeft = ""; t.style.marginRight = "auto"; }
+      T.setHeader(res.hdr === "1", t);
+    },
+    setHeader(on, table) {
+      const x = table ? { table } : tableCtx(); if (!x) return;
+      const row = x.table.rows[0]; if (!row) return;
+      Array.from(row.cells).forEach((c) => {
+        const want = on ? "TH" : "TD";
+        if (c.tagName === want) return;
+        const n = document.createElement(want);
+        Array.from(c.attributes).forEach((a) => n.setAttribute(a.name, a.value));
+        n.innerHTML = c.innerHTML; c.replaceWith(n);
+      });
+      scheduleSave();
+    },
+    hasHeader() { const c = currentCell(); const t = c && c.closest("table"); return !!(t && t.rows[0] && t.rows[0].cells[0] && t.rows[0].cells[0].tagName === "TH"); },
+  };
+  function done(x) { clearCellSel(); scheduleSave(); }
+  function focusAfter(table, r) {
+    if (!table.isConnected) return;
+    const row = table.rows[Math.min(r, table.rows.length - 1)];
+    if (row && row.cells[0]) placeCaretIn(row.cells[0], false);
+  }
+
+  // palette popup reused for cell colours
+  function openPaletteAt(x, y, onPick, resetLabel) {
+    closeMenu(); closeSizeMenu(); closeColorPanel();
+    colorMode = "custom";
+    colorPanel.innerHTML = "";
+    const reset = document.createElement("button");
+    reset.className = "cp-reset";
+    reset.innerHTML = '<span class="cp-none"></span><span></span>';
+    reset.lastChild.textContent = resetLabel;
+    reset.addEventListener("click", () => { closeColorPanel(); onPick(null); });
+    colorPanel.appendChild(reset);
+    const grid = document.createElement("div");
+    grid.className = "cp-grid";
+    PALETTE.forEach((row) => row.forEach((c) => {
+      const b = document.createElement("button");
+      b.className = "cp-swatch"; b.style.background = c; b.title = c;
+      b.addEventListener("click", () => { closeColorPanel(); onPick(c); });
+      grid.appendChild(b);
+    }));
+    colorPanel.appendChild(grid);
+    placeFloating(colorPanel, x, y);
+  }
+
+  /* selecting cells with the mouse + resizing columns by dragging their border */
+  let dragAnchor = null, resizing = null;
+  const EDGE = 5;
+  function edgeCell(e) {
+    const c = cellOf(e.target);
+    if (!c) return null;
+    const r = c.getBoundingClientRect();
+    return Math.abs(e.clientX - r.right) <= EDGE ? c : null;
+  }
+  richEditor.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    clearCellSel();
+    const edge = edgeCell(e);
+    if (edge) {
+      const table = edge.closest("table"), p = posOf(table, edge);
+      const ci = p.c + (edge.colSpan || 1) - 1;
+      const cg = ensureColPx(table);
+      resizing = { table, cg, ci, x: e.clientX, w: parseFloat(cg.children[ci].style.width), nw: cg.children[ci + 1] ? parseFloat(cg.children[ci + 1].style.width) : null };
+      e.preventDefault();
+      return;
+    }
+    dragAnchor = cellOf(e.target);
+  });
+  richEditor.addEventListener("mousemove", (e) => {
+    if (resizing) {
+      const dx = (e.clientX - resizing.x) / zoomNow();
+      let w = Math.max(24, resizing.w + dx);
+      if (resizing.nw !== null) {
+        w = Math.min(w, resizing.w + resizing.nw - 24);
+        resizing.cg.children[resizing.ci + 1].style.width = Math.round(resizing.nw - (w - resizing.w)) + "px";
+      }
+      resizing.cg.children[resizing.ci].style.width = Math.round(w) + "px";
+      normalizeCols(resizing.table);
+      return;
+    }
+    richEditor.style.cursor = !dragAnchor && edgeCell(e) ? "col-resize" : "";
+    if (dragAnchor && e.buttons === 1) {
+      const c = cellOf(e.target);
+      if (!c || c.closest("table") !== dragAnchor.closest("table")) return;
+      if (c === dragAnchor && !cellSel) return;
+      selectRect(dragAnchor.closest("table"), dragAnchor, c);
+      window.getSelection().removeAllRanges();
+    }
+  });
+  document.addEventListener("mouseup", () => {
+    if (resizing) { resizing = null; scheduleSave(); }
+    dragAnchor = null;
+  });
+
+  // right click inside a table = table menu
+  richEditor.addEventListener("contextmenu", (e) => {
+    const c = cellOf(e.target);
+    if (!c) return;
+    e.preventDefault();
+    if (!cellSel || !c.classList.contains("cell-sel")) { clearCellSel(); placeCaretIn(c, false); }
+    openMenuAt("table", e.clientX, e.clientY);
+  });
+
+  /* =====================================================================
+     Other editor features: lists, checklists, links, bookmarks, TOC, ...
+     ===================================================================== */
+  function toggleChecklist() {
+    if (!needOpenDoc()) return;
+    focusRich();
+    const n = activeElement();
+    const ul = n && n.closest ? n.closest("ul") : null;
+    if (ul && ul.classList.contains("checklist")) { document.execCommand("insertUnorderedList"); }
+    else {
+      if (!ul) document.execCommand("insertUnorderedList");
+      const n2 = activeElement(), ul2 = n2 && n2.closest ? n2.closest("ul") : null;
+      if (ul2) ul2.classList.add("checklist");
+    }
+    scheduleSave();
+  }
+  richEditor.addEventListener("click", (e) => {
+    const li = e.target.closest && e.target.closest("ul.checklist > li");
+    if (li && li.parentNode.parentNode && richEditor.contains(li)) {
+      const r = li.getBoundingClientRect();
+      if (e.clientX < r.left + 2 && e.clientX > r.left - 30 * zoomNow()) { li.classList.toggle("done"); scheduleSave(); }
+    }
+    const a = e.target.closest && e.target.closest("a[href]");
+    if (a && (e.ctrlKey || e.metaKey || a.closest(".toc"))) {
+      const href = a.getAttribute("href") || "";
+      if (href.startsWith("#")) {
+        e.preventDefault();
+        const t = richEditor.querySelector('[id="' + href.slice(1).replace(/"/g, "") + '"]');
+        if (t) t.scrollIntoView({ block: "start", behavior: "smooth" });
+      } else if (/^https?:/i.test(href)) { window.open(href, "_blank", "noopener"); }
+    }
+  });
+  async function insertLink() {
+    if (!needOpenDoc()) return;
+    const url = await showModal("Insert link", "Enter link URL:", "https://", true);
+    if (!url) return;
+    focusRich(); restoreSelection();
+    const r = selectionInEditor();
+    if (r && r.collapsed) document.execCommand("insertHTML", false, '<a href="' + escapeHtml(url) + '">' + escapeHtml(url) + "</a>&nbsp;");
+    else document.execCommand("createLink", false, url);
+    scheduleSave();
+  }
+  el("linkBtn").addEventListener("click", insertLink);
+
+  function slug(t) { return (t || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "section"; }
+  function ensureHeadingIds() {
+    const used = new Set();
+    richEditor.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach((h, i) => {
+      let id = h.id && h.id.startsWith("h-") ? h.id : "h-" + slug(h.textContent) + "-" + (i + 1);
+      while (used.has(id)) id += "x";
+      used.add(id); h.id = id;
+    });
+  }
+  async function insertBookmark() {
+    if (!needOpenDoc()) return;
+    const name = await showModal("Insert bookmark", "Bookmark name:", "", true);
+    if (!name || !name.trim()) return;
+    const id = "bm-" + slug(name);
+    focusRich(); restoreSelection();
+    document.execCommand("insertHTML", false, '<a id="' + id + '" data-bookmark="' + escapeHtml(name.trim()) + '"></a>');
+    scheduleSave(); showToast("Bookmark added");
+  }
+  async function insertInternalLink() {
+    if (!needOpenDoc()) return;
+    ensureHeadingIds();
+    const targets = [];
+    richEditor.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach((h) => targets.push([h.id, "Heading: " + (h.textContent.trim() || "(empty)")]));
+    richEditor.querySelectorAll("a[data-bookmark]").forEach((b) => targets.push([b.id, "Bookmark: " + b.dataset.bookmark]));
+    if (!targets.length) { showToast("Add a heading or a bookmark first"); return; }
+    const res = await formDialog("Link to heading or bookmark", [{ key: "t", label: "Target", type: "select", value: targets[0][0], options: targets }], "Insert link");
+    if (!res) return;
+    focusRich(); restoreSelection();
+    const r = selectionInEditor();
+    if (r && r.collapsed) {
+      const label = (targets.find((t) => t[0] === res.t) || [0, "link"])[1].replace(/^[^:]+: /, "");
+      document.execCommand("insertHTML", false, '<a href="#' + res.t + '">' + escapeHtml(label) + "</a>&nbsp;");
+    } else document.execCommand("createLink", false, "#" + res.t);
+    scheduleSave();
+  }
+  function buildToc() {
+    ensureHeadingIds();
+    const hs = Array.from(richEditor.querySelectorAll("h1,h2,h3,h4,h5,h6")).filter((h) => !h.closest(".toc"));
+    if (!hs.length) return null;
+    let html = '<div class="toc" contenteditable="false"><div class="toc-title">Table of contents</div>';
+    hs.forEach((h) => { const lvl = +h.tagName[1] - 1; html += '<a href="#' + h.id + '" style="margin-left:' + lvl * 16 + 'px">' + escapeHtml(h.textContent.trim() || "(empty)") + "</a>"; });
+    return html + "</div>";
+  }
+  function insertToc() {
+    if (!needOpenDoc()) return;
+    focusRich(); restoreSelection();
+    const html = buildToc();
+    if (!html) { showToast("Add some headings first"); return; }
+    document.execCommand("insertHTML", false, html + "<p><br></p>");
+    scheduleSave();
+  }
+  function updateToc() {
+    if (!needOpenDoc()) return;
+    const toc = richEditor.querySelector(".toc");
+    if (!toc) { showToast("No table of contents in this document"); return; }
+    const html = buildToc();
+    if (!html) { toc.remove(); } else { const tmp = document.createElement("div"); tmp.innerHTML = html; toc.replaceWith(tmp.firstChild); }
+    scheduleSave(); showToast("Table of contents updated");
+  }
+  function insertPageBreak() {
+    if (!needOpenDoc()) return;
+    focusRich(); restoreSelection();
+    document.execCommand("insertHTML", false, '<hr class="page-break"><p><br></p>');
+    scheduleSave();
+  }
+  function insertText(t) { if (!needOpenDoc()) return; focusRich(); restoreSelection(); document.execCommand("insertText", false, t); scheduleSave(); }
+  const fmtDateLong = () => new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  const fmtTime = () => new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+  const SYMBOLS = {
+    "Emoji": "😀 😃 😄 😁 😆 😅 😂 🙂 😉 😊 😍 😘 😎 🤔 😐 😢 😭 😡 👍 👎 👏 🙏 💪 👀 ❤ 💔 ⭐ 🔥 ✨ 🎉 ✅ ❌ ⚠ 💡 📌 📎 📅 ☀ ☁ ☂ ☕ 🍕 🎂 🚀".split(" "),
+    "Math": "± × ÷ ≠ ≈ ≤ ≥ ∞ √ ∑ ∏ ∫ ∂ ∆ ∇ ∈ ∉ ∩ ∪ ⊂ ⊃ ⊆ ⊇ ∧ ∨ ¬ ∀ ∃ ∅ ∴ ∵ ° ‰ ¼ ½ ¾ ² ³ ⁿ π µ".split(" "),
+    "Greek": "α β γ δ ε ζ η θ ι κ λ μ ν ξ ο π ρ σ τ υ φ χ ψ ω Α Β Γ Δ Ε Θ Λ Ξ Π Σ Φ Ψ Ω".split(" "),
+    "Arrows": "← ↑ → ↓ ↔ ↕ ⇐ ⇑ ⇒ ⇓ ⇔ ↩ ↪ ↺ ↻ ➜ ➔ ➤ ▲ ▼ ◀ ▶ ● ○ ■ □ ◆ ◇ ★ ☆ ✓ ✗".split(" "),
+    "Symbols": "© ® ™ § ¶ † ‡ • … – — « » ‹ › “ ” ‘ ’ ¡ ¿ € £ ¥ ¢ ₹ ₽ ¤ № ℃ ℉ ♠ ♣ ♥ ♦ ♩ ♪ ♫ ☎ ✉ ✂".split(" "),
+  };
+  function openSymbolsDialog() {
+    if (!needOpenDoc()) return;
+    const ov = document.createElement("div");
+    ov.className = "modal-overlay";
+    const box = document.createElement("div");
+    box.className = "modal";
+    box.innerHTML = '<div class="modal-header"><h3>Emoji and special characters</h3><button class="modal-close" type="button">&times;</button></div><div class="modal-body"><div class="sym-tabs"></div><div class="sym-grid"></div></div>';
+    const tabs = box.querySelector(".sym-tabs"), grid = box.querySelector(".sym-grid");
+    const show = (name) => {
+      tabs.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.textContent === name));
+      grid.innerHTML = "";
+      SYMBOLS[name].forEach((ch) => { const b = document.createElement("button"); b.type = "button"; b.textContent = ch; b.onclick = () => { close(); insertText(ch); }; grid.appendChild(b); });
+    };
+    Object.keys(SYMBOLS).forEach((n) => { const b = document.createElement("button"); b.type = "button"; b.textContent = n; b.onclick = () => show(n); tabs.appendChild(b); });
+    const close = () => { document.removeEventListener("keydown", onKey, true); ov.remove(); };
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    document.addEventListener("keydown", onKey, true);
+    ov.addEventListener("mousedown", (e) => { if (e.target === ov) close(); });
+    box.querySelector(".modal-close").onclick = close;
+    ov.appendChild(box); document.body.appendChild(ov);
+    show("Emoji");
+  }
+
+  /* ---------------- Format painter ---------------- */
+  let copiedFormat = null;
+  function copyFormatting() {
+    if (!needOpenDoc()) return;
+    const n = activeElement();
+    if (!n) return;
+    const cs = getComputedStyle(n);
+    const st = (c) => { try { return document.queryCommandState(c); } catch (_) { return false; } };
+    copiedFormat = {
+      bold: st("bold"), italic: st("italic"), underline: st("underline"), strike: st("strikeThrough"),
+      font: (document.queryCommandValue("fontName") || "").replace(/["']/g, ""),
+      size: currentFontSizePt(), color: cs.color, bg: cs.backgroundColor,
+    };
+    showToast("Formatting copied");
+  }
+  function pasteFormatting() {
+    if (!needOpenDoc()) return;
+    if (!copiedFormat) { showToast("Copy formatting first"); return; }
+    focusRich(); restoreSelection();
+    const f = copiedFormat, st = (c) => { try { return document.queryCommandState(c); } catch (_) { return false; } };
+    document.execCommand("removeFormat");
+    [["bold", f.bold], ["italic", f.italic], ["underline", f.underline], ["strikeThrough", f.strike]].forEach(([c, want]) => { if (want && !st(c)) document.execCommand(c); });
+    if (f.font) document.execCommand("fontName", false, f.font);
+    applyFontSize(f.size);
+    document.execCommand("styleWithCSS", false, true);
+    document.execCommand("foreColor", false, f.color);
+    if (f.bg && f.bg !== "rgba(0, 0, 0, 0)") document.execCommand("hiliteColor", false, f.bg);
+    document.execCommand("styleWithCSS", false, false);
+    scheduleSave(); syncToolbar();
+  }
+
+  /* ---------------- Paragraph helpers ---------------- */
+  function toggleParaSpace(side) {
+    if (!needOpenDoc()) return;
+    focusRich();
+    const prop = side === "before" ? "marginTop" : "marginBottom";
+    const bl = selectedBlocks();
+    const on = bl.length && bl.every((b) => b.style[prop]);
+    bl.forEach((b) => { b.style[prop] = on ? "" : "12pt"; if (!b.getAttribute("style")) b.removeAttribute("style"); });
+    scheduleSave();
+  }
+  function toggleParaBorder() {
+    if (!needOpenDoc()) return;
+    focusRich();
+    const bl = selectedBlocks();
+    const on = bl.length && bl.every((b) => b.style.border);
+    bl.forEach((b) => { b.style.border = on ? "" : "1px solid #000"; b.style.padding = on ? "" : "4px 6px"; if (!b.getAttribute("style")) b.removeAttribute("style"); });
+    scheduleSave();
+  }
+  function shadeParagraph(color) {
+    focusRich();
+    selectedBlocks().forEach((b) => { b.style.backgroundColor = color || ""; if (!b.getAttribute("style")) b.removeAttribute("style"); });
+    scheduleSave();
+  }
+  function caseTo(kind) {
+    if (!needOpenDoc()) return;
+    focusRich(); restoreSelection();
+    const r = selectionInEditor();
+    const text = r ? r.toString() : "";
+    if (!text) { showToast("Select some text first"); return; }
+    const out = kind === "upper" ? text.toUpperCase() : kind === "lower" ? text.toLowerCase() : text.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+    document.execCommand("insertText", false, out);
+    scheduleSave();
+  }
+
+  /* ---------------- Clipboard (menu versions) ---------------- */
+  async function pasteFromClipboard(plain) {
+    if (!needOpenDoc()) return;
+    focusRich(); restoreSelection();
+    try {
+      if (!plain && navigator.clipboard.read) {
+        const items = await navigator.clipboard.read();
+        for (const it of items) {
+          if (it.types.includes("text/html")) {
+            const html = await (await it.getType("text/html")).text();
+            document.execCommand("insertHTML", false, stripImages(html));
+            scheduleSave(); return;
+          }
+        }
+      }
+      const t = await navigator.clipboard.readText();
+      document.execCommand("insertText", false, t);
+      scheduleSave();
+    } catch (_) { showToast("Use Ctrl+V to paste (the browser blocked clipboard access)"); }
+  }
+  function stripImages(html) { const d = document.createElement("div"); d.innerHTML = html; d.querySelectorAll("img,picture,svg,video,canvas,script,style").forEach((n) => n.remove()); return d.innerHTML; }
+  richEditor.addEventListener("paste", (e) => {
+    const cd = e.clipboardData;
+    if (!cd) return;
+    const html = cd.getData("text/html");
+    if (html && /<img|<picture|<svg/i.test(html)) {
+      e.preventDefault();
+      const cleaned = stripImages(html);
+      if (cleaned.trim()) document.execCommand("insertHTML", false, cleaned);
+      else document.execCommand("insertText", false, cd.getData("text/plain"));
+      scheduleSave();
+    } else if (!html && cd.files && cd.files.length) { e.preventDefault(); showToast("Images are not supported"); }
+  });
+  richEditor.addEventListener("drop", (e) => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); showToast("Images are not supported"); }
+  });
+
+  /* ---------------- Find / replace (next / previous) ---------------- */
+  let lastFind = "";
+  async function findInDoc(backwards) {
+    if (!needOpenDoc()) return;
+    if (!lastFind || backwards === undefined) {
+      const t = await showModal("Find", "Find text:", lastFind, true);
+      if (!t) return;
+      lastFind = t;
+      backwards = false;
+    }
+    focusRich();
+    if (!window.find(lastFind, false, !!backwards, true, false, false, false)) showToast("No matches found");
+  }
+
+  /* ---------------- View helpers ---------------- */
+  function setMode(editing) {
+    richEditor.contentEditable = editing ? "true" : "false";
+    document.body.classList.toggle("viewing", !editing);
+    LS.set("docly-mode", editing ? "edit" : "view");
+    showToast(editing ? "Editing mode" : "Viewing mode (read only)");
+  }
+  const isEditing = () => richEditor.contentEditable !== "false";
+  function togglePageless() {
+    pageArea.classList.toggle("pageless");
+    LS.set("docly-pageless", pageArea.classList.contains("pageless") ? "1" : "0");
+    rafRender(); mmRefresh();
+  }
+  function toggleNonPrinting() {
+    document.body.classList.toggle("show-nonprint");
+    LS.set("docly-nonprint", document.body.classList.contains("show-nonprint") ? "1" : "0");
+  }
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen && document.documentElement.requestFullscreen().catch(() => {});
+  }
+  function toggleToolbar() { toolbar.classList.toggle("hidden"); LS.set("docly-toolbar", toolbar.classList.contains("hidden") ? "0" : "1"); rafRender(); }
+  if (LS.get("docly-toolbar", "1") === "0") toolbar.classList.add("hidden");
+  if (LS.get("docly-pageless", "0") === "1") pageArea.classList.add("pageless");
+  if (LS.get("docly-nonprint", "0") === "1") document.body.classList.add("show-nonprint");
+
+  // outline of headings
+  const outlinePanel = el("outlinePanel");
+  function renderOutline() {
+    if (outlinePanel.classList.contains("hidden")) return;
+    outlinePanel.innerHTML = '<div class="outline-head"><span>Document outline</span><button type="button" aria-label="Close">&times;</button></div><div class="outline-list"></div>';
+    outlinePanel.querySelector("button").onclick = toggleOutline;
+    const list = outlinePanel.querySelector(".outline-list");
+    ensureHeadingIds();
+    const hs = richEditor.querySelectorAll("h1,h2,h3,h4,h5,h6");
+    if (!hs.length) { list.innerHTML = '<div class="outline-empty">Headings you add to the document will appear here.</div>'; return; }
+    hs.forEach((h) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "outline-item";
+      b.style.paddingLeft = 8 + (+h.tagName[1] - 1) * 14 + "px";
+      b.textContent = h.textContent.trim() || "(empty)";
+      b.onclick = () => h.scrollIntoView({ block: "start", behavior: "smooth" });
+      list.appendChild(b);
+    });
+  }
+  function toggleOutline() { outlinePanel.classList.toggle("hidden"); renderOutline(); }
+  let outlineTimer = null;
+
+  /* ---------------- File helpers ---------------- */
+  async function makeCopy() {
+    if (!needOpenDoc()) return;
+    try {
+      if (state.dirty) await doSave(true);
+      const title = "Copy of " + (state.currentDoc.title || "Untitled");
+      const created = await api("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, type: "note" }) });
+      await api("/api/documents/" + encodeURIComponent(created.id), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: contentHtml(), tags: state.currentDoc.tags || [] }) });
+      await loadDocuments();
+      showToast('Created "' + created.title + '"');
+    } catch (err) { showToast("Copy error: " + err.message); }
+  }
+  function emailCopy() {
+    if (!needOpenDoc()) return;
+    const body = (richEditor.innerText || "").slice(0, 1500);
+    window.location.href = "mailto:?subject=" + encodeURIComponent(state.currentDoc.title || "Document") + "&body=" + encodeURIComponent(body);
+  }
+  function renameDoc() { if (!needOpenDoc()) return; titleInput.focus(); titleInput.select(); }
+  function setLanguage(code, label) { richEditor.lang = code; LS.set("docly-lang", code); showToast("Language: " + label); }
+  richEditor.lang = LS.get("docly-lang", "en");
+  function toggleSpellcheck() {
+    const on = richEditor.spellcheck === false;
+    richEditor.spellcheck = on; LS.set("docly-spell", on ? "1" : "0");
+  }
+  richEditor.spellcheck = LS.get("docly-spell", "1") === "1";
+  function showDocDetails() {
+    if (!needOpenDoc()) return;
+    const d = state.currentDoc;
+    const text = (richEditor.innerText || "").trim();
+    const words = text ? text.split(/\s+/).length : 0;
+    const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : "—");
+    showModal("Document details",
+      "Title: " + (d.title || "Untitled") + "\nCreated: " + fmt(d.createdAt) + "\nLast modified: " + fmt(d.updatedAt) +
+      "\nWords: " + words + "\nCharacters: " + text.replace(/\n/g, "").length + "\nTables: " + richEditor.querySelectorAll("table").length +
+      "\nTags: " + ((d.tags || []).join(", ") || "—"), "", false);
+  }
+  async function showPageSetup() {
+    if (!needOpenDoc()) return;
+    const m = rulerMetrics();
+    const cm = (px) => (px / 96 * 2.54).toFixed(2);
+    const cur = JSON.parse(LS.get("docly-page", "{}"));
+    const res = await formDialog("Page setup", [
+      { key: "size", label: "Paper size", type: "select", value: cur.size || "letter", options: [["letter", "Letter (21.6 × 27.9 cm)"], ["a4", "A4 (21.0 × 29.7 cm)"], ["legal", "Legal (21.6 × 35.6 cm)"]] },
+      { key: "orient", label: "Orientation", type: "select", value: cur.orient || "portrait", options: [["portrait", "Portrait"], ["landscape", "Landscape"]] },
+      { key: "top", label: "Top margin (cm)", type: "number", step: 0.1, min: 0, max: 8, value: cm(m.t) },
+      { key: "bottom", label: "Bottom margin (cm)", type: "number", step: 0.1, min: 0, max: 8, value: cm(m.b) },
+      { key: "left", label: "Left margin (cm)", type: "number", step: 0.1, min: 0, max: 8, value: cm(m.l) },
+      { key: "right", label: "Right margin (cm)", type: "number", step: 0.1, min: 0, max: 8, value: cm(m.r) },
+      { key: "color", label: "Page color", type: "color", value: cur.color || "#ffffff" },
+    ], "OK");
+    if (!res) return;
+    LS.set("docly-page", JSON.stringify({ size: res.size, orient: res.orient, color: res.color }));
+    const px = (v) => Math.max(0, Math.min(300, parseFloat(v) || 0)) / 2.54 * 96 + "px";
+    richEditor.style.paddingTop = px(res.top); richEditor.style.paddingBottom = px(res.bottom);
+    richEditor.style.paddingLeft = px(res.left); richEditor.style.paddingRight = px(res.right);
+    saveMargins(); applyPage(); rafRender(); mmRefresh();
+  }
+  const PAPER_IN = { letter: [8.5, 11], a4: [8.2677, 11.6929], legal: [8.5, 14] };
+  function applyPage() {
+    const cur = JSON.parse(LS.get("docly-page", "{}"));
+    let [w, h] = PAPER_IN[cur.size || "letter"];
+    if (cur.orient === "landscape") [w, h] = [h, w];
+    pageArea.style.width = Math.round(w * 96) + "px";
+    richEditor.style.minHeight = Math.round(h * 96) + "px";
+    if (cur.color && cur.color.toLowerCase() !== "#ffffff") richEditor.style.background = cur.color; else richEditor.style.background = "";
+  }
+  window.__pagePaper = () => {
+    const cur = JSON.parse(LS.get("docly-page", "{}"));
+    let [w, h] = PAPER_IN[cur.size || "letter"];
+    if (cur.orient === "landscape") [w, h] = [h, w];
+    return { w: Math.round(w * 1440), h: Math.round(h * 1440) };
+  };
+
+  /* =====================================================================
+     MINIMAP (View > Minimap, like VS Code)
+     ===================================================================== */
+  const minimap = el("minimap"), mmInner = el("mmInner"), mmPage = el("mmPage"), mmSlider = el("mmSlider");
+  const MM_W = 120;
+  let mmTimer = null, mmOn = LS.get("docly-minimap", "1") === "1";
+  const minimapVisible = () => mmOn;
+  function mmRefresh() {
+    if (!mmOn || !state.currentDoc) { minimap.classList.add("hidden"); return; }
+    minimap.classList.remove("hidden");
+    clearTimeout(mmTimer);
+    mmTimer = setTimeout(mmRender, 120);
+  }
+  function mmRender() {
+    if (!mmOn || !state.currentDoc) return;
+    const W = richEditor.offsetWidth || 816;
+    mmPage.innerHTML = contentHtml();
+    mmPage.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
+    mmPage.querySelectorAll("[contenteditable]").forEach((n) => n.removeAttribute("contenteditable"));
+    mmPage.style.cssText = richEditor.getAttribute("style") || "";
+    mmPage.style.width = W + "px";
+    mmPage.style.minHeight = "0";
+    mmPage.style.transform = "scale(" + MM_W / W + ")";
+    mmPage.style.transformOrigin = "0 0";
+    mmInner.dataset.h = String(mmPage.offsetHeight * MM_W / W);
+    mmInner.style.height = mmInner.dataset.h + "px";
+    mmSync();
+  }
+  function mmSync() {
+    if (!mmOn) return;
+    const innerH = parseFloat(mmInner.dataset.h) || 0;
+    const viewH = minimap.clientHeight;
+    const sh = pageScroll.scrollHeight || 1, ch = pageScroll.clientHeight, st = pageScroll.scrollTop;
+    const ratio = innerH / sh;                         // minimap px per document px
+    const sliderH = Math.max(14, ch * ratio);
+    const scrollMax = Math.max(1, sh - ch);
+    const overflow = Math.max(0, innerH - viewH);      // taller than the panel: slide it like VS Code
+    const offset = overflow * (st / scrollMax);
+    mmInner.style.transform = "translateY(" + -offset + "px)";
+    mmSlider.style.height = sliderH + "px";
+    mmSlider.style.top = Math.max(0, st * ratio - offset) + "px";
+    minimap._m = { innerH, viewH, sh, ch, overflow, scrollMax, ratio };
+  }
+  function mmScrollTo(clientY, centered) {
+    const m = minimap._m; if (!m) return;
+    const y = clientY - minimap.getBoundingClientRect().top;
+    // invert: slider top = st*ratio - overflow*st/scrollMax  =>  st = top / (ratio - overflow/scrollMax)
+    const k = m.ratio - m.overflow / m.scrollMax;
+    const sliderH = parseFloat(mmSlider.style.height) || 14;
+    const top = centered ? y - sliderH / 2 : y;
+    const st = k > 0 ? top / k : 0;
+    pageScroll.scrollTop = Math.max(0, Math.min(m.scrollMax, st));
+  }
+  let mmDrag = false;
+  minimap.addEventListener("mousedown", (e) => {
+    e.preventDefault(); mmDrag = true; minimap.classList.add("dragging");
+    mmScrollTo(e.clientY, true);
+  });
+  document.addEventListener("mousemove", (e) => { if (mmDrag) mmScrollTo(e.clientY, true); });
+  document.addEventListener("mouseup", () => { mmDrag = false; minimap.classList.remove("dragging"); });
+  minimap.addEventListener("wheel", (e) => { pageScroll.scrollTop += e.deltaY; e.preventDefault(); }, { passive: false });
+  function toggleMinimap() {
+    mmOn = !mmOn;
+    LS.set("docly-minimap", mmOn ? "1" : "0");
+    mmRefresh(); rafRender();
+  }
+  pageScroll.addEventListener("scroll", mmSync, { passive: true });
+  new ResizeObserver(() => { if (mmOn) mmRefresh(); }).observe(richEditor);
+  new ResizeObserver(() => mmSync()).observe(minimap);
+  richEditor.addEventListener("input", () => { mmRefresh(); clearTimeout(outlineTimer); outlineTimer = setTimeout(renderOutline, 400); });
+  window.__doclyAfterOpen = () => { clearCellSel(); applyPage(); mmRefresh(); renderOutline(); setTimeout(mmRefresh, 60); };
+  applyPage();
+  if (LS.get("docly-mode", "edit") === "view") { richEditor.contentEditable = "false"; document.body.classList.add("viewing"); }
+
+  /* =====================================================================
+     HELP (?)  -> list of sections -> dialog
+     ===================================================================== */
+  const helpMenu = el("helpMenu"), helpOverlay = el("helpOverlay"), helpTitle = el("helpTitle"), helpBody = el("helpBody");
+  function closeHelpMenu() { helpMenu.classList.add("hidden"); }
+  function openHelpMenu() {
+    closeMenu(); closeHelpMenu();
+    let r = helpBtn.getBoundingClientRect();
+    if (!helpBtn.offsetParent || !r.width) { const b = menuBar.querySelector('[data-menu="help"]'); r = b.getBoundingClientRect(); }
+    placeFloating(helpMenu, r.left - 170 + r.width, r.bottom + 6);
+    const f = helpMenu.querySelector("button"); if (f) f.focus();
+  }
+  helpBtn.addEventListener("click", (e) => { e.stopPropagation(); if (helpMenu.classList.contains("hidden")) openHelpMenu(); else closeHelpMenu(); });
+  document.addEventListener("mousedown", (e) => { if (!helpMenu.contains(e.target) && !helpBtn.contains(e.target)) closeHelpMenu(); });
+  helpMenu.addEventListener("click", (e) => { const b = e.target.closest("[data-help]"); if (b) { closeHelpMenu(); openHelpSection(b.dataset.help); } });
+  helpMenu.addEventListener("keydown", (e) => {
+    const items = Array.from(helpMenu.querySelectorAll("button")), i = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    if (e.key === "Escape") { closeHelpMenu(); helpBtn.focus(); }
+  });
+  const closeHelpDialog = () => { helpOverlay.classList.add("hidden"); helpBody.innerHTML = ""; };
+  el("helpClose").addEventListener("click", closeHelpDialog);
+  helpOverlay.addEventListener("mousedown", (e) => { if (e.target === helpOverlay) closeHelpDialog(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !helpOverlay.classList.contains("hidden")) closeHelpDialog(); });
+
+  const MIT = `MIT License
+
+Copyright (c) 2026 Docly
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
+
+  // Same shortcuts as Google Docs (Windows / Chrome) for the features Docly has
+  const SHORTCUTS = [
+    ["Common actions", [
+      ["Save", "Ctrl+S"], ["New document", "Ctrl+N"], ["Open document (search)", "Ctrl+O"], ["Print", "Ctrl+P"],
+      ["Copy / Cut / Paste", "Ctrl+C / X / V"], ["Paste without formatting", "Ctrl+Shift+V"],
+      ["Undo", "Ctrl+Z"], ["Redo", "Ctrl+Y  or  Ctrl+Shift+Z"], ["Insert or edit link", "Ctrl+K"],
+      ["Find", "Ctrl+F"], ["Find next / previous", "Ctrl+G / Ctrl+Shift+G"], ["Find and replace", "Ctrl+H"],
+      ["Select all", "Ctrl+A"], ["Show keyboard shortcuts", "Ctrl+/"], ["Word count", "Ctrl+Shift+C"],
+      ["Compact controls (hide toolbar)", "Ctrl+Shift+F"],
+    ]],
+    ["Text formatting", [
+      ["Bold", "Ctrl+B"], ["Italic", "Ctrl+I"], ["Underline", "Ctrl+U"], ["Strikethrough", "Alt+Shift+5"],
+      ["Superscript", "Ctrl+."], ["Subscript", "Ctrl+,"], ["Increase font size", "Ctrl+Shift+."], ["Decrease font size", "Ctrl+Shift+,"],
+      ["Clear formatting", "Ctrl+\\"], ["Copy text formatting", "Ctrl+Alt+C"], ["Paste text formatting", "Ctrl+Alt+V"],
+      ["Cycle capitalization", "Shift+F3"],
+    ]],
+    ["Paragraph formatting", [
+      ["Normal text", "Ctrl+Alt+0"], ["Heading 1 – 6", "Ctrl+Alt+1 … 6"],
+      ["Align left", "Ctrl+Shift+L"], ["Align center", "Ctrl+Shift+E"], ["Align right", "Ctrl+Shift+R"], ["Justify", "Ctrl+Shift+J"],
+      ["Numbered list", "Ctrl+Shift+7"], ["Bulleted list", "Ctrl+Shift+8"], ["Checklist", "Ctrl+Shift+9"],
+      ["Increase indent", "Ctrl+]"], ["Decrease indent", "Ctrl+["],
+      ["Single line spacing", "Ctrl+1"], ["1.5 line spacing", "Ctrl+5"], ["Double line spacing", "Ctrl+2"],
+      ["Add / remove space before paragraph", "Ctrl+0"],
+    ]],
+    ["Insert", [
+      ["Page break", "Ctrl+Enter"], ["Next / previous table cell", "Tab / Shift+Tab"],
+    ]],
+    ["Menus", [
+      ["File", "Alt+Shift+F"], ["Edit", "Alt+Shift+E"], ["View", "Alt+Shift+V"], ["Insert", "Alt+Shift+I"],
+      ["Format", "Alt+Shift+O"], ["Tools", "Alt+Shift+T"], ["Help", "Alt+Shift+H"],
+    ]],
+    ["Navigation", [
+      ["Start / end of document", "Ctrl+Home / Ctrl+End"], ["Move by word", "Ctrl+← / →"],
+      ["Select by word", "Ctrl+Shift+← / →"], ["Select to start / end of line", "Shift+Home / End"],
+    ]],
+  ];
+
+  function openHelpSection(name) {
+    helpBody.innerHTML = "";
+    if (name === "about") {
+      helpTitle.textContent = "Program info";
+      const dl = document.createElement("dl");
+      [["Name", "Docly"], ["Version", "1.0"], ["What it is", "A local word processor for notes and documents."],
+       ["Where data lives", "Your documents are saved as folders inside the \"documents\" folder next to the program. Nothing leaves your computer."],
+       ["Requirements", "Python 3 only, no other dependencies."],
+       ["Export", "Word, OpenDocument, RTF, PDF, TXT, HTML, EPUB, Markdown and JSON backup (File > Download)."]]
+        .forEach(([k, v]) => { const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.textContent = v; dl.appendChild(dt); dl.appendChild(dd); });
+      helpBody.appendChild(dl);
+    } else if (name === "license") {
+      helpTitle.textContent = "License";
+      const pre = document.createElement("pre"); pre.className = "help-license"; pre.textContent = MIT;
+      const p = document.createElement("p");
+      p.appendChild(document.createTextNode("Read more about the MIT license: "));
+      const a = document.createElement("a"); a.href = "https://opensource.org/license/mit"; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "https://opensource.org/license/mit";
+      p.appendChild(a);
+      helpBody.appendChild(pre); helpBody.appendChild(p);
+    } else {
+      helpTitle.textContent = "Keyboard shortcuts";
+      SHORTCUTS.forEach(([group, rows]) => {
+        const h = document.createElement("div"); h.className = "sc-group"; h.textContent = group; helpBody.appendChild(h);
+        rows.forEach(([label, keys]) => {
+          const row = document.createElement("div"); row.className = "sc-row";
+          const l = document.createElement("span"); l.textContent = label;
+          const k = document.createElement("kbd"); k.textContent = keys;
+          row.appendChild(l); row.appendChild(k); helpBody.appendChild(row);
+        });
+      });
+    }
+    helpOverlay.classList.remove("hidden");
+    helpBody.scrollTop = 0;
+  }
+
+  /* =====================================================================
+     Keyboard shortcuts (Google Docs style)
+     ===================================================================== */
+  document.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented) return;
+    const mod = e.ctrlKey || e.metaKey;
+    const code = e.code, key = e.key;
+    const ae = document.activeElement;
+    const inEd = ae === richEditor || richEditor.contains(ae);
+    const ready = !!state.currentDoc;
+    const stop = () => { e.preventDefault(); e.stopPropagation(); };
+    const edit = (fn) => { if (!ready) return; stop(); if (!isEditing()) { showToast("Viewing mode: switch to Editing in View > Mode"); return; } focusRich(); fn(); };
+
+    if (key === "F1") { stop(); openHelpMenu(); return; }
+    const typing = ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName);
+    if (typing && !(mod && ["KeyS", "KeyN", "KeyP", "KeyO", "Slash"].includes(code))) return;
+
+    // ---- alt+shift: menu bar
+    if (e.altKey && e.shiftKey && !mod) {
+      const map = { KeyF: "file", KeyE: "edit", KeyV: "view", KeyI: "insert", KeyO: "format", KeyT: "tools", KeyH: "help", KeyB: "table" };
+      if (map[code] && ready) { stop(); const b = menuBar.querySelector('[data-menu="' + map[code] + '"]'); if (b) openMenu(b); return; }
+      if (code === "Digit5" && inEd) { edit(() => { document.execCommand("strikeThrough"); scheduleSave(); syncToolbar(); }); return; }
+    }
+
+    // ---- Tab in tables / indent
+    if (key === "Tab" && inEd && !mod && !e.altKey && isEditing()) {
+      const cell = currentCell();
+      if (cell) {
+        stop();
+        const t = cell.closest("table");
+        let cells = Array.from(t.querySelectorAll("th,td"));
+        let i = cells.indexOf(cell) + (e.shiftKey ? -1 : 1);
+        if (i >= cells.length) { insertRowAt(t, gridOf(t).length - 1, true); cells = Array.from(t.querySelectorAll("th,td")); scheduleSave(); }
+        if (i >= 0 && cells[i]) placeCaretIn(cells[i], true);
+        return;
+      }
+      stop(); document.execCommand(e.shiftKey ? "outdent" : "indent"); scheduleSave(); return;
+    }
+    if (cellSel && inEd && !mod && (key === "Backspace" || key === "Delete")) {
+      stop();
+      const x = tableCtx(); if (x) { selectedCells(x).forEach((c) => { c.innerHTML = "<br>"; }); scheduleSave(); }
+      return;
+    }
+    if (cellSel && key === "Escape") { clearCellSel(); return; }
+    if (cellSel && !mod && key.length === 1) { const c = currentCell(); clearCellSel(); if (c) placeCaretIn(c, false); }
+
+    if (!mod) return;
+
+    // ---- ctrl+alt
+    if (e.altKey && !e.shiftKey) {
+      if (/^Digit[0-6]$/.test(code) && inEd) { edit(() => applyBlockStyle(code === "Digit0" ? "P" : "H" + code[5])); return; }
+      if (code === "KeyC" && inEd) { stop(); copyFormatting(); return; }
+      if (code === "KeyV" && inEd) { edit(pasteFormatting); return; }
+      return;
+    }
+
+    // ---- ctrl+shift
+    if (e.shiftKey) {
+      switch (code) {
+        case "KeyL": if (inEd) edit(() => { document.execCommand("justifyLeft"); scheduleSave(); syncToolbar(); }); return;
+        case "KeyE": if (inEd) edit(() => { document.execCommand("justifyCenter"); scheduleSave(); syncToolbar(); }); return;
+        case "KeyR": if (inEd) edit(() => { document.execCommand("justifyRight"); scheduleSave(); syncToolbar(); }); return;
+        case "KeyJ": if (inEd) edit(() => { document.execCommand("justifyFull"); scheduleSave(); syncToolbar(); }); return;
+        case "Digit7": if (inEd) edit(() => { document.execCommand("insertOrderedList"); scheduleSave(); }); return;
+        case "Digit8": if (inEd) edit(() => { document.execCommand("insertUnorderedList"); scheduleSave(); }); return;
+        case "Digit9": if (inEd) edit(toggleChecklist); return;
+        case "Period": if (inEd) edit(() => stepFontSize(1)); return;
+        case "Comma": if (inEd) edit(() => stepFontSize(-1)); return;
+        case "KeyG": if (ready) { stop(); findInDoc(true); } return;
+        case "KeyC": if (ready) { stop(); showWordCount(); } return;
+        case "KeyF": if (ready) { stop(); toggleToolbar(); } return;
+        default: return;
+      }
+    }
+
+    // ---- ctrl only
+    switch (code) {
+      case "KeyS": stop(); if (ready) { doSave(true); showToast("Document saved"); } return;
+      case "KeyN": stop(); newDocBtn.click(); return;
+      case "KeyO": stop(); activeSearch().focus(); showToast("Search a document to open"); return;
+      case "KeyP": stop(); if (ready) window.print(); else showToast("Open a document to print"); return;
+      case "KeyF": stop(); if (ready) { lastFind = ""; findInDoc(); } else activeSearch().focus(); return;
+      case "KeyH": stop(); if (ready) showFindReplaceDialog(); else showToast("Open a document for find and replace"); return;
+      case "KeyG": if (ready) { stop(); findInDoc(false); } return;
+      case "KeyK": if (ready) { stop(); insertLink(); } return;
+      case "Slash": stop(); openHelpSection("shortcuts"); return;
+      case "Backslash": if (inEd) edit(() => { document.execCommand("removeFormat"); scheduleSave(); syncToolbar(); }); return;
+      case "Period": if (inEd) edit(() => { document.execCommand("superscript"); scheduleSave(); syncToolbar(); }); return;
+      case "Comma": if (inEd) edit(() => { document.execCommand("subscript"); scheduleSave(); syncToolbar(); }); return;
+      case "BracketRight": if (inEd) edit(() => { document.execCommand("indent"); scheduleSave(); }); return;
+      case "BracketLeft": if (inEd) edit(() => { document.execCommand("outdent"); scheduleSave(); }); return;
+      case "Digit1": if (inEd) edit(() => applyLineSpacing("1")); return;
+      case "Digit5": if (inEd) edit(() => applyLineSpacing("1.5")); return;
+      case "Digit2": if (inEd) edit(() => applyLineSpacing("2")); return;
+      case "Digit0": if (inEd) edit(() => toggleParaSpace("before")); return;
+      case "Enter": if (inEd) edit(insertPageBreak); return;
+      default: return;
+    }
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "F3" && e.shiftKey && state.currentDoc && richEditor.contains(document.activeElement)) { e.preventDefault(); caseBtn.click(); }
+  });
+
+
   /* ---------------- Menu bar ---------------- */
   const menuBar = el("menuBar");
   const menuPanel = el("menuPanel");
@@ -2615,13 +3561,19 @@ Ctrl+End      End of document`;
     showModal("Word count", `Words: ${words}\nCharacters: ${chars}\nCharacters (no spaces): ${noSpaces}`, "", false);
   }
 
+  const fontNames = Array.from(el("fontFamilySelect").options).map((o) => o.value);
+  const langs = [["en", "English"], ["it", "Italiano"], ["es", "Español"], ["fr", "Français"], ["de", "Deutsch"], ["pt", "Português"]];
+  const sc = (c, v) => cmd(c, v);
+  const pickAnchor = () => ({ x: lastMenuAnchor.x + 12, y: lastMenuAnchor.y + 12 });
+
   const MENUS = {
     file: [
       { label: "New document", key: "Ctrl+N", run: () => newDocBtn.click() },
+      { label: "Open document", key: "Ctrl+O", run: async () => { await goHome(); activeSearch().focus(); } },
       { label: "All documents (home)", run: () => goHome() },
-      { label: "Save", key: "Ctrl+S", run: needDoc(() => { doSave(true); showToast("Document saved"); }) },
-      { label: "Add / remove favorite", run: needDoc(() => favBtn.click()) },
+      { label: "Make a copy", run: makeCopy },
       "-",
+      { label: "Email a copy", run: emailCopy },
       { label: "Download", sub: [
         { label: "Microsoft Word (.docx)", run: doExportDocx },
         { label: "OpenDocument Format (.odt)", run: doExportOdt },
@@ -2634,9 +3586,18 @@ Ctrl+End      End of document`;
         "-",
         { label: "Docly backup (.json)", run: doExportJson },
       ] },
+      "-",
+      { label: "Save", key: "Ctrl+S", run: needDoc(() => { doSave(true); showToast("Document saved"); }) },
+      { label: "Rename", run: renameDoc },
+      { label: "Add / remove favorite", run: needDoc(() => favBtn.click()) },
+      { label: "Move to trash", run: needDoc(() => deleteBtn.click()) },
+      "-",
+      { label: "Language", sub: langs.map(([c, n]) => ({ label: n, check: () => richEditor.lang === c, run: () => setLanguage(c, n) })) },
+      { label: "Page setup", run: showPageSetup },
       { label: "Print", key: "Ctrl+P", run: clickId("printBtn") },
       "-",
-      { label: "Move to trash", run: needDoc(() => deleteBtn.click()) },
+      { label: "Document details", run: showDocDetails },
+      { label: "Word count", key: "Ctrl+Shift+C", run: needDoc(showWordCount) },
     ],
     edit: [
       { label: "Undo", key: "Ctrl+Z", run: clickId("undoBtn") },
@@ -2644,60 +3605,114 @@ Ctrl+End      End of document`;
       "-",
       { label: "Cut", key: "Ctrl+X", run: cmd("cut") },
       { label: "Copy", key: "Ctrl+C", run: cmd("copy") },
+      { label: "Paste", key: "Ctrl+V", run: () => pasteFromClipboard(false) },
+      { label: "Paste without formatting", key: "Ctrl+Shift+V", run: () => pasteFromClipboard(true) },
       { label: "Select all", key: "Ctrl+A", run: cmd("selectAll") },
+      { label: "Delete", run: cmd("delete") },
       "-",
+      { label: "Find", key: "Ctrl+F", run: () => { lastFind = ""; findInDoc(); } },
       { label: "Find and replace", key: "Ctrl+H", run: clickId("findBtn") },
       "-",
-      { label: "Clear formatting", key: "Ctrl+Space", run: clickId("clearFormatBtn") },
+      { label: "Copy formatting", key: "Ctrl+Alt+C", run: copyFormatting },
+      { label: "Paste formatting", key: "Ctrl+Alt+V", run: pasteFormatting },
+      { label: "Clear formatting", key: "Ctrl+\\", run: clickId("clearFormatBtn") },
+      "-",
+      { label: "Editing preferences", sub: [
+        { label: "Spelling check", check: () => richEditor.spellcheck, run: toggleSpellcheck },
+      ] },
     ],
     view: [
-      { label: "Zoom", sub: [
-        zoomItem("0.5", "50%"), zoomItem("0.75", "75%"), zoomItem("1", "100%"),
-        zoomItem("1.25", "125%"), zoomItem("1.5", "150%"), zoomItem("2", "200%"),
+      { label: "Mode", sub: [
+        { label: "Editing", check: () => isEditing(), run: () => setMode(true) },
+        { label: "Viewing", check: () => !isEditing(), run: () => setMode(false) },
       ] },
       "-",
+      { label: "Print layout (pages)", check: () => !pageArea.classList.contains("pageless"), run: togglePageless },
       { label: "Ruler", check: () => rulersVisible(), run: toggleRuler },
-      { label: "Toolbar", check: () => !toolbar.classList.contains("hidden"),
-        run: () => toolbar.classList.toggle("hidden") },
-      { label: "Document list", check: () => sidebarOpen(),
-        run: toggleSidebar },
+      { label: "Document outline", check: () => !outlinePanel.classList.contains("hidden"), run: toggleOutline },
+      { label: "Non-printing characters", check: () => document.body.classList.contains("show-nonprint"), run: toggleNonPrinting },
+      { label: "Toolbar", key: "Ctrl+Shift+F", check: () => !toolbar.classList.contains("hidden"), run: toggleToolbar },
+      { label: "Minimap", check: () => minimapVisible(), run: toggleMinimap },
+      { label: "Document list", check: () => sidebarOpen(), run: toggleSidebar },
+      "-",
+      { label: "Zoom", sub: [
+        zoomItem("0.5", "50%"), zoomItem("0.75", "75%"), zoomItem("0.9", "90%"), zoomItem("1", "100%"),
+        zoomItem("1.25", "125%"), zoomItem("1.5", "150%"), zoomItem("2", "200%"),
+      ] },
+      { label: "Full screen", check: () => !!document.fullscreenElement, run: toggleFullscreen },
       "-",
       { label: "Light / dark theme", run: () => themeToggle.click() },
     ],
     insert: [
-      { label: "Image", run: clickId("imageBtn") },
-      { label: "Table", run: clickId("tableBtn") },
-      { label: "Link", run: clickId("linkBtn") },
+      { label: "Table", run: () => { if (!needOpenDoc()) return; const a = pickAnchor(); openTablePicker(a.x, a.y); } },
+      { label: "Emoji and special characters", run: openSymbolsDialog },
+      { label: "Link", key: "Ctrl+K", run: insertLink },
       { label: "Horizontal line", run: clickId("hrBtn") },
       { label: "Code block", run: clickId("codeBtn") },
+      "-",
+      { label: "Page break", key: "Ctrl+Enter", run: needDoc(insertPageBreak) },
+      { label: "Date and time", sub: [
+        { label: "Date", run: () => insertText(fmtDateLong()) },
+        { label: "Time", run: () => insertText(fmtTime()) },
+        { label: "Date and time", run: () => insertText(fmtDateLong() + ", " + fmtTime()) },
+      ] },
+      "-",
+      { label: "Bookmark", run: insertBookmark },
+      { label: "Link to heading or bookmark", run: insertInternalLink },
+      { label: "Table of contents", sub: [
+        { label: "Insert table of contents", run: insertToc },
+        { label: "Update table of contents", run: updateToc },
+      ] },
     ],
     format: [
       { label: "Text", sub: [
-        { label: "Bold", key: "Ctrl+B", run: cmd("bold") },
-        { label: "Italic", key: "Ctrl+I", run: cmd("italic") },
-        { label: "Underline", key: "Ctrl+U", run: cmd("underline") },
-        { label: "Strikethrough", run: cmd("strikeThrough") },
-        { label: "Superscript", run: cmd("superscript") },
-        { label: "Subscript", run: cmd("subscript") },
+        { label: "Bold", key: "Ctrl+B", run: sc("bold") },
+        { label: "Italic", key: "Ctrl+I", run: sc("italic") },
+        { label: "Underline", key: "Ctrl+U", run: sc("underline") },
+        { label: "Strikethrough", key: "Alt+Shift+5", run: sc("strikeThrough") },
+        { label: "Superscript", key: "Ctrl+.", run: sc("superscript") },
+        { label: "Subscript", key: "Ctrl+,", run: sc("subscript") },
+        "-",
+        { label: "Text color", run: clickId("textColorBtn") },
+        { label: "Highlight color", run: clickId("highlightBtn") },
       ] },
+      { label: "Font", sub: fontNames.map((f) => ({ label: f, run: cmd("fontName", f) })) },
+      { label: "Font size", sub: [
+        { label: "Increase font size", key: "Ctrl+Shift+.", run: needDoc(() => stepFontSize(1)) },
+        { label: "Decrease font size", key: "Ctrl+Shift+,", run: needDoc(() => stepFontSize(-1)) },
+      ] },
+      { label: "Capitalization", sub: [
+        { label: "lowercase", run: () => caseTo("lower") },
+        { label: "UPPERCASE", run: () => caseTo("upper") },
+        { label: "Title Case", run: () => caseTo("title") },
+      ] },
+      "-",
       { label: "Paragraph styles", sub: [
-        { label: "Normal text", run: blockFmt("P") },
-        { label: "Heading 1", run: blockFmt("H1") },
-        { label: "Heading 2", run: blockFmt("H2") },
-        { label: "Heading 3", run: blockFmt("H3") },
-        { label: "Quote", run: blockFmt("BLOCKQUOTE") },
+        { label: "Normal text", key: "Ctrl+Alt+0", run: () => applyBlockStyle("P") },
+        { label: "Title", run: () => applyBlockStyle("TITLE") },
+        { label: "Subtitle", run: () => applyBlockStyle("SUBTITLE") },
+        { label: "Heading 1", key: "Ctrl+Alt+1", run: () => applyBlockStyle("H1") },
+        { label: "Heading 2", key: "Ctrl+Alt+2", run: () => applyBlockStyle("H2") },
+        { label: "Heading 3", key: "Ctrl+Alt+3", run: () => applyBlockStyle("H3") },
+        { label: "Heading 4", key: "Ctrl+Alt+4", run: () => applyBlockStyle("H4") },
+        { label: "Heading 5", key: "Ctrl+Alt+5", run: () => applyBlockStyle("H5") },
+        { label: "Heading 6", key: "Ctrl+Alt+6", run: () => applyBlockStyle("H6") },
+        { label: "Quote", run: () => applyBlockStyle("BLOCKQUOTE") },
       ] },
-      { label: "Alignment", sub: [
-        { label: "Left", key: "Ctrl+L", run: cmd("justifyLeft") },
-        { label: "Center", key: "Ctrl+E", run: cmd("justifyCenter") },
-        { label: "Right", key: "Ctrl+R", run: cmd("justifyRight") },
-        { label: "Justified", key: "Ctrl+J", run: cmd("justifyFull") },
+      { label: "Align", sub: [
+        { label: "Left", key: "Ctrl+Shift+L", run: sc("justifyLeft") },
+        { label: "Center", key: "Ctrl+Shift+E", run: sc("justifyCenter") },
+        { label: "Right", key: "Ctrl+Shift+R", run: sc("justifyRight") },
+        { label: "Justified", key: "Ctrl+Shift+J", run: sc("justifyFull") },
       ] },
-      { label: "Lists and indents", sub: [
-        { label: "Bulleted list", key: "Ctrl+Shift+L", run: cmd("insertUnorderedList") },
-        { label: "Numbered list", run: cmd("insertOrderedList") },
-        { label: "Increase indent", key: "Ctrl+M", run: cmd("indent") },
-        { label: "Decrease indent", key: "Ctrl+Shift+M", run: cmd("outdent") },
+      { label: "Lists", sub: [
+        { label: "Bulleted list", key: "Ctrl+Shift+8", run: sc("insertUnorderedList") },
+        { label: "Numbered list", key: "Ctrl+Shift+7", run: sc("insertOrderedList") },
+        { label: "Checklist", key: "Ctrl+Shift+9", run: toggleChecklist },
+      ] },
+      { label: "Indent", sub: [
+        { label: "Increase indent", key: "Ctrl+]", run: sc("indent") },
+        { label: "Decrease indent", key: "Ctrl+[", run: sc("outdent") },
       ] },
       { label: "Line spacing", sub: [
         { label: "Single", key: "Ctrl+1", run: () => applyLineSpacing("1") },
@@ -2705,18 +3720,67 @@ Ctrl+End      End of document`;
         { label: "1.5", key: "Ctrl+5", run: () => applyLineSpacing("1.5") },
         { label: "Double", key: "Ctrl+2", run: () => applyLineSpacing("2") },
       ] },
+      { label: "Paragraph spacing", sub: [
+        { label: "Add / remove space before", key: "Ctrl+0", run: () => toggleParaSpace("before") },
+        { label: "Add / remove space after", run: () => toggleParaSpace("after") },
+      ] },
+      { label: "Paragraph borders and shading", sub: [
+        { label: "Border on / off", run: toggleParaBorder },
+        { label: "Shading…", run: () => { if (!needOpenDoc()) return; const a = pickAnchor(); openPaletteAt(a.x, a.y, shadeParagraph, "None"); } },
+      ] },
       "-",
-      { label: "Clear formatting", key: "Ctrl+Space", run: clickId("clearFormatBtn") },
+      { label: "Clear formatting", key: "Ctrl+\\", run: clickId("clearFormatBtn") },
+    ],
+    table: [
+      { label: "Insert table", run: () => { if (!needOpenDoc()) return; const a = pickAnchor(); openTablePicker(a.x, a.y); } },
+      "-",
+      { label: "Insert row above", disabled: () => !inTable(), run: T.rowAbove },
+      { label: "Insert row below", disabled: () => !inTable(), run: T.rowBelow },
+      { label: "Insert column left", disabled: () => !inTable(), run: T.colLeft },
+      { label: "Insert column right", disabled: () => !inTable(), run: T.colRight },
+      "-",
+      { label: "Delete row", disabled: () => !inTable(), run: T.delRow },
+      { label: "Delete column", disabled: () => !inTable(), run: T.delCol },
+      { label: "Delete table", disabled: () => !inTable(), run: T.delTable },
+      "-",
+      { label: "Merge cells", disabled: () => !cellSel, run: T.merge },
+      { label: "Split cell", disabled: () => !inTable(), run: T.split },
+      "-",
+      { label: "Distribute rows", disabled: () => !inTable(), run: T.distRows },
+      { label: "Distribute columns", disabled: () => !inTable(), run: T.distCols },
+      "-",
+      { label: "Cell vertical alignment", disabled: () => !inTable(), sub: [
+        { label: "Top", run: () => T.vAlign("top") }, { label: "Middle", run: () => T.vAlign("middle") }, { label: "Bottom", run: () => T.vAlign("bottom") },
+      ] },
+      { label: "Cell content alignment", disabled: () => !inTable(), sub: [
+        { label: "Left", run: () => T.hAlign("left") }, { label: "Center", run: () => T.hAlign("center") },
+        { label: "Right", run: () => T.hAlign("right") }, { label: "Justified", run: () => T.hAlign("justify") },
+      ] },
+      { label: "Cell background color…", disabled: () => !inTable(), run: () => { const a = pickAnchor(); openPaletteAt(a.x, a.y, T.bg, "None"); } },
+      { label: "Border color…", disabled: () => !inTable(), run: () => { const a = pickAnchor(); openPaletteAt(a.x, a.y, (c) => c && T.borderColor(c), "Cancel"); } },
+      { label: "Border width", disabled: () => !inTable(), sub: [
+        { label: "No border", run: () => T.borderWidth(0) }, { label: "1 pt", run: () => T.borderWidth(1) },
+        { label: "2 pt", run: () => T.borderWidth(2) }, { label: "3 pt", run: () => T.borderWidth(3) },
+        { label: "4 pt", run: () => T.borderWidth(4) }, { label: "6 pt", run: () => T.borderWidth(6) },
+      ] },
+      "-",
+      { label: "Column width…", disabled: () => !inTable(), run: T.colWidth },
+      { label: "Minimum row height…", disabled: () => !inTable(), run: T.rowHeight },
+      { label: "Header row", disabled: () => !inTable(), check: () => inTable() && T.hasHeader(), run: () => T.setHeader(!T.hasHeader()) },
+      { label: "Table properties…", disabled: () => !inTable(), run: T.props },
     ],
     tools: [
-      { label: "Word count", run: needDoc(showWordCount) },
+      { label: "Word count", key: "Ctrl+Shift+C", run: needDoc(showWordCount) },
+      { label: "Spelling check", check: () => richEditor.spellcheck, run: toggleSpellcheck },
       { label: "Change case", run: clickId("caseBtn") },
       "-",
       { label: "Text color", run: clickId("textColorBtn") },
       { label: "Highlight color", run: clickId("highlightBtn") },
     ],
     help: [
-      { label: "Keyboard shortcuts", key: "F1", run: () => showHelpDialog() },
+      { label: "Program info", run: () => openHelpSection("about") },
+      { label: "License", run: () => openHelpSection("license") },
+      { label: "Keyboard shortcuts", key: "Ctrl+/", run: () => openHelpSection("shortcuts") },
     ],
   };
 
@@ -2732,6 +3796,7 @@ Ctrl+End      End of document`;
       wrap.className = "menu-item-wrap";
       const b = document.createElement("button");
       b.className = "menu-item";
+      if (item.disabled && item.disabled()) b.disabled = true;
       const chk = document.createElement("span");
       chk.className = "menu-check";
       chk.textContent = item.check && item.check() ? "✓" : "";
@@ -2772,11 +3837,24 @@ Ctrl+End      End of document`;
     openMenuName = null;
     hoverOpened = null;
   }
+  let lastMenuAnchor = { x: 120, y: 120 };
+  function openMenuAt(name, x, y) {
+    closeMenu(); closeTablePicker(); closeHelpMenu();
+    menuPanel.innerHTML = "";
+    renderMenuItems(MENUS[name], menuPanel);
+    lastMenuAnchor = { x, y };
+    menuPanel.classList.remove("hidden");
+    const w = menuPanel.offsetWidth, h = menuPanel.offsetHeight;
+    menuPanel.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 8)) + "px";
+    menuPanel.style.top = Math.max(4, Math.min(y, window.innerHeight - h - 8)) + "px";
+  }
   function openMenu(btn) {
     const name = btn.dataset.menu;
+    closeTablePicker(); closeHelpMenu(); closeColorPanel(); closeSizeMenu();
     menuPanel.innerHTML = "";
     renderMenuItems(MENUS[name], menuPanel);
     const r = btn.getBoundingClientRect();
+    lastMenuAnchor = { x: r.left, y: r.bottom + 2 };
     menuPanel.style.left = r.left + "px";
     menuPanel.style.top = r.bottom + 2 + "px";
     menuPanel.classList.remove("hidden");
