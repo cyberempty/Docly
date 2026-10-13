@@ -30,6 +30,15 @@ _index = {}
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+def valid_iso(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return value
+    except ValueError:
+        return None
+
 def strip_html(html):
     text = re.sub(r"<[^>]+>", " ", html or "")
     text = re.sub(r"&nbsp;", " ", text)
@@ -44,15 +53,18 @@ def sanitize_name(name):
         name = "Untitled"
     return name[:120]
 
+FOLDER_SUFFIX = "_Docly"
+
 def unique_folder_name(base, ignore=None):
-    candidate = base
+    # Projects inside "documents" are stored as "<project name>_Docly"
+    candidate = base + FOLDER_SUFFIX
     i = 1
     while True:
         path = os.path.join(DOCS_DIR, candidate)
-        if not os.path.isdir(path) or candidate == ignore:
+        if not os.path.isdir(path) or (ignore is not None and candidate.lower() == ignore.lower()):
             return candidate
         i += 1
-        candidate = f"{base} ({i})"
+        candidate = f"{base} ({i}){FOLDER_SUFFIX}"
 
 def ensure_docs_dir():
     os.makedirs(DOCS_DIR, exist_ok=True)
@@ -252,15 +264,18 @@ class DoclyHandler(BaseHTTPRequestHandler):
                 os.makedirs(folder_path, exist_ok=True)
                 doc_id = str(uuid.uuid4())
                 ts = now_iso()
+                # Optional fields: used when importing a JSON backup to restore the document as it was
+                content = body.get("content")
+                tags = body.get("tags")
                 data = {
                     "id": doc_id,
                     "title": title,
                     "type": doc_type,
-                    "content": "",
-                    "tags": [],
-                    "favorite": False,
-                    "createdAt": ts,
-                    "updatedAt": ts,
+                    "content": content if isinstance(content, str) else "",
+                    "tags": [str(t)[:40] for t in tags][:30] if isinstance(tags, list) else [],
+                    "favorite": bool(body.get("favorite", False)),
+                    "createdAt": valid_iso(body.get("createdAt")) or ts,
+                    "updatedAt": valid_iso(body.get("updatedAt")) or ts,
                 }
                 save_doc(data, folder)
                 _index[doc_id] = folder
@@ -286,9 +301,8 @@ class DoclyHandler(BaseHTTPRequestHandler):
                     self._send_error_json(404, "Document not found")
                     return
                 new_title = sanitize_name(body["title"])
-                new_folder = new_title
+                new_folder = unique_folder_name(new_title, ignore=folder)
                 if new_folder != folder:
-                    new_folder = unique_folder_name(new_title, ignore=folder)
                     old_path = os.path.join(DOCS_DIR, folder)
                     new_path = os.path.join(DOCS_DIR, new_folder)
                     os.rename(old_path, new_path)
@@ -455,18 +469,14 @@ def main():
     ensure_docs_dir()
     _index = build_index()
     server = ThreadingHTTPServer((HOST, PORT), DoclyHandler)
-    print("=" * 52)
-    print("  Docly is running")
-    print(f"  Open browser at: http://{HOST}:{PORT}")
-    print(f"  Documents saved in: {DOCS_DIR}")
-    print("  Press CTRL+C to stop the server")
-    print("=" * 52)
+    print(f"Open browser at: http://{HOST}:{PORT}")
+    print(f"Documents saved in: {DOCS_DIR}")
     if "--no-browser" not in sys.argv:
         threading.Thread(target=open_browser_delayed, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nDocly stopped.")
+        print()
         server.shutdown()
 
 if __name__ == "__main__":

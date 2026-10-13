@@ -128,6 +128,39 @@
     });
   }
   
+  // Popup with custom buttons. buttons: [{ label, value, primary }]. Resolves with the clicked value ("cancel" on Esc / outside click / x).
+  function showChoice(title, message, buttons) {
+    return new Promise((resolve) => {
+      modalTitle.textContent = title;
+      modalMessage.textContent = message;
+      modalInput.classList.add("hidden");
+      modalInput2.classList.add("hidden");
+      modalButtons.classList.add("hidden");
+      const row = document.createElement("div");
+      row.className = "modal-buttons";
+      const finish = (v) => { closeModal(); resolve(v); };
+      buttons.forEach((b) => {
+        const btn = document.createElement("button");
+        btn.className = "modal-btn " + (b.primary ? "modal-btn-ok" : "modal-btn-cancel");
+        btn.textContent = b.label;
+        btn.onclick = () => finish(b.value);
+        row.appendChild(btn);
+      });
+      modalButtons.parentNode.appendChild(row);
+      const handleEscape = (e) => { if (e.key === "Escape") finish("cancel"); };
+      modalCancel.onclick = () => finish("cancel");
+      modalOverlay.onclick = (e) => { if (e.target === modalOverlay) finish("cancel"); };
+      document.addEventListener("keydown", handleEscape);
+      modalOverlay.classList.remove("hidden");
+      modal._cleanup = () => {
+        row.remove();
+        modalCancel.onclick = null;
+        modalOverlay.onclick = null;
+        document.removeEventListener("keydown", handleEscape);
+      };
+    });
+  }
+
   function closeModal() {
     modalOverlay.classList.add("hidden");
     modal.classList.remove("modal-help");
@@ -656,8 +689,24 @@
   }
 
   async function deleteDocument(id, title) {
-    const confirmed = await showModal("Delete document", `Delete "${title || "this document"}"? It will be moved to the computer's trash.`, "", false);
-    if (!confirmed) return;
+    const name = title || "this document";
+    // Popup 1: Cancel / Delete
+    const first = await showChoice("Delete document", `Do you want to delete "${name}"?`, [
+      { label: "Cancel", value: "cancel" },
+      { label: "Delete", value: "delete", primary: true },
+    ]);
+    if (first !== "delete") return;
+    // Popup 2: confirmation with optional JSON export
+    const second = await showChoice("Delete or export first?", `"${name}" will be moved to the trash. You can also download a copy as a JSON file before deleting it: importing it again restores the document as if it had never been deleted.`, [
+      { label: "Cancel", value: "cancel" },
+      { label: "Delete", value: "delete" },
+      { label: "Export JSON and delete", value: "export", primary: true },
+    ]);
+    if (second !== "delete" && second !== "export") return;
+    if (second === "export") {
+      try { await exportDocumentJson(id); }
+      catch (err) { showToast("Export failed, document not deleted: " + err.message); return; }
+    }
     try {
       await api("/api/documents/" + encodeURIComponent(id), { method: "DELETE" });
       const sel = `[data-id="${CSS.escape(id)}"]`;
@@ -2117,7 +2166,7 @@ ${contentHtml()}
       for (const sg of mergeTokens(line)) {
         if (sg.anchor) { anchors.set(sg.anchor, { page: pages.length, y: yy + sg.size }); continue; }
         if (!sg.text) continue;
-        const col = sg.color ? pdfColor(sg.color) : (sg.link ? pdfColor("1155CC") : "0 0 0");
+        const col = sg.link ? pdfColor("1155CC") : (sg.color ? pdfColor(sg.color) : "0 0 0");
         if (sg.bg) content.push(pdfColor(sg.bg) + " rg " + x.toFixed(2) + " " + (yy - sg.size * 0.22).toFixed(2) + " " + sg.w.toFixed(2) + " " + (sg.size * 1.15).toFixed(2) + " re f");
         content.push("BT", "/" + pdfFontName(sg.b, sg.i, sg.mono) + " " + sg.size + " Tf", col + " rg", x.toFixed(2) + " " + yy.toFixed(2) + " Td", "(" + pdfEscape(sg.text) + ") Tj", "ET");
         if (sg.u || sg.link) content.push(col + " RG 0.6 w " + x.toFixed(2) + " " + (yy - 1.6).toFixed(2) + " m " + (x + sg.w).toFixed(2) + " " + (yy - 1.6).toFixed(2) + " l S");
@@ -2283,21 +2332,38 @@ ${contentHtml()}
   }
 
   // ---- Docly backup (.json): everything needed to restore the document
-  function doExportJson() {
-    if (!hasOpenDoc()) return;
-    const d = state.currentDoc;
-    const data = {
+  function buildBackup(d, html) {
+    return {
       app: "docly",
       version: 1,
       title: d.title || "",
       tags: d.tags || [],
       favorite: !!d.favorite,
-      content: contentHtml(),
+      content: html,
       page: JSON.parse(LS.get("docly-page", "{}")),
+      createdAt: d.createdAt || null,
+      updatedAt: d.updatedAt || null,
       exportedAt: new Date().toISOString(),
     };
-    downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), exportName("json"));
+  }
+  function downloadBackup(data) {
+    const base = (data.title || "document").replace(/[\\/:*?"<>|]+/g, "_").trim() || "document";
+    downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), base + "_Docly.json");
+  }
+  function doExportJson() {
+    if (!hasOpenDoc()) return;
+    downloadBackup(buildBackup(state.currentDoc, contentHtml()));
     showToast("Exported as backup (JSON)");
+  }
+  // Exports any document by id (used before deleting). The open document is exported from the editor so unsaved edits are included.
+  async function exportDocumentJson(id) {
+    if (state.currentId === id && state.currentDoc) {
+      downloadBackup(buildBackup(state.currentDoc, contentHtml()));
+    } else {
+      const d = await api("/api/documents/" + encodeURIComponent(id));
+      downloadBackup(buildBackup(d, d.content || ""));
+    }
+    showToast("Backup (JSON) downloaded");
   }
 
   async function doImportJson(file) {
@@ -2306,8 +2372,10 @@ ${contentHtml()}
       const data = JSON.parse(text);
       if (!data || typeof data.content !== "string") { showToast("Invalid Docly JSON file"); return; }
       const title = data.title || file.name.replace(/\.json$/i, "") || "Imported document";
-      const created = await api("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, type: "note" }) });
-      await api("/api/documents/" + encodeURIComponent(created.id), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: data.content, tags: data.tags || [] }) });
+      const created = await api("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        title, type: "note", content: data.content, tags: data.tags || [], favorite: !!data.favorite,
+        createdAt: data.createdAt || undefined, updatedAt: data.updatedAt || undefined,
+      }) });
       if (data.page && typeof data.page === "object") LS.set("docly-page", JSON.stringify(data.page));
       showToast("Document imported");
       await loadDocuments();
@@ -4243,7 +4311,7 @@ ${contentHtml()}
      ===================================================================== */
   const minimap = el("minimap"), mmInner = el("mmInner"), mmPage = el("mmPage"), mmSlider = el("mmSlider");
   const MM_W = 120;
-  let mmTimer = null, mmOn = LS.get("docly-minimap", "0") === "1";
+  let mmTimer = null, mmOn = LS.get("docly-minimap-v2", "0") === "1";
   const minimapVisible = () => mmOn;
   function mmRefresh() {
     if (!mmOn || !state.currentDoc) { minimap.classList.add("hidden"); return; }
@@ -4301,7 +4369,7 @@ ${contentHtml()}
   minimap.addEventListener("wheel", (e) => { pageScroll.scrollTop += e.deltaY; e.preventDefault(); }, { passive: false });
   function toggleMinimap() {
     mmOn = !mmOn;
-    LS.set("docly-minimap", mmOn ? "1" : "0");
+    LS.set("docly-minimap-v2", mmOn ? "1" : "0");
     mmRefresh(); rafRender();
   }
   pageScroll.addEventListener("scroll", mmSync, { passive: true });
@@ -4327,7 +4395,9 @@ ${contentHtml()}
   helpBtn.addEventListener("click", (e) => { e.stopPropagation(); if (helpMenu.classList.contains("hidden")) openHelpMenu(); else closeHelpMenu(); });
   const homeHelpBtn = el("homeHelpBtn");
   homeHelpBtn.addEventListener("click", (e) => { e.stopPropagation(); if (helpMenu.classList.contains("hidden")) openHelpMenu(homeHelpBtn); else closeHelpMenu(); });
-  document.addEventListener("mousedown", (e) => { if (!helpMenu.contains(e.target) && !helpBtn.contains(e.target) && !homeHelpBtn.contains(e.target)) closeHelpMenu(); });
+  const editorHelpBtn = el("editorHelpBtn");
+  editorHelpBtn.addEventListener("click", (e) => { e.stopPropagation(); if (helpMenu.classList.contains("hidden")) openHelpMenu(editorHelpBtn); else closeHelpMenu(); });
+  document.addEventListener("mousedown", (e) => { if (!helpMenu.contains(e.target) && !helpBtn.contains(e.target) && !homeHelpBtn.contains(e.target) && !editorHelpBtn.contains(e.target)) closeHelpMenu(); });
   helpMenu.addEventListener("click", (e) => { const b = e.target.closest("[data-help]"); if (b) { closeHelpMenu(); openHelpSection(b.dataset.help); } });
   helpMenu.addEventListener("keydown", (e) => {
     const items = Array.from(helpMenu.querySelectorAll("button")), i = items.indexOf(document.activeElement);
@@ -4433,6 +4503,7 @@ SOFTWARE.`;
     helpOverlay.classList.remove("hidden");
     helpBody.scrollTop = 0;
   }
+  el("infoBtn").addEventListener("click", () => openHelpSection("about"));
 
   /* =====================================================================
      Keyboard shortcuts (Google Docs style)

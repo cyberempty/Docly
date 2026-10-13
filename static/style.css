@@ -1,9 +1,10 @@
 /* Docly — clean document-editor interface */
 
 :root[data-theme="light"] {
-  --bg: #fafafa;            /* app background */
+  --bg: #ffffff;            /* app background */
+  --bg-soft: #fafafa;       /* subtle fill (code blocks, table headers, keys) */
   --surface: #ffffff;       /* page, dialogs, inputs */
-  --toolbar: #f1f1f1;       /* toolbar pill */
+  --toolbar: #ffffff;       /* toolbar pill */
   --search: #ececec;
   --hover: rgba(68, 71, 70, 0.08);
   --selected: #e2e2e2;
@@ -27,6 +28,7 @@
 
 :root[data-theme="dark"] {
   --bg: #131314;
+  --bg-soft: #131314;
   --surface: #1e1f20;
   --toolbar: #282a2c;
   --search: #282a2c;
@@ -371,6 +373,12 @@ select:focus-visible,
   place-items: center;
 }
 .theme-fab:hover { box-shadow: var(--elev-2); background: var(--toolbar); }
+/* info button: next to the theme button, editor only (the home has its own help button) */
+.info-fab { right: 64px; }
+#app.home-mode ~ .info-fab { display: none; }
+/* help button: editor only, next to the info button (the home has its own help button) */
+.help-fab { right: 112px; }
+#app.home-mode ~ .help-fab { display: none; }
 
 /* ---------------- Editor ---------------- */
 .editor-area {
@@ -573,6 +581,9 @@ select:focus-visible,
   max-height: 120px;
   overflow-y: auto;
 }
+
+/* white toolbar: a thin outline keeps the pill visible */
+:root[data-theme="light"] .toolbar { box-shadow: inset 0 0 0 1px var(--border-soft); }
 
 .tb-btn {
   width: 30px;
@@ -805,7 +816,7 @@ select:focus-visible,
   color: var(--text-muted);
 }
 .rich-editor pre {
-  background: var(--bg);
+  background: var(--bg-soft);
   border: 1px solid var(--border-soft);
   border-radius: 4px;
   padding: 10px 12px;
@@ -827,7 +838,7 @@ select:focus-visible,
   min-width: 48px;
   vertical-align: top;
 }
-.rich-editor th { background: var(--bg); font-weight: 700; }
+.rich-editor th { background: var(--bg-soft); font-weight: 700; }
 .rich-editor table { table-layout: fixed; }
 .rich-editor td, .rich-editor th { overflow-wrap: anywhere; }
 
@@ -1303,7 +1314,7 @@ select:focus-visible,
 .home-footer p { margin: 0; }
 .crypton-link {
   font-weight: 700;
-  font-style: italic;
+  font-style: normal;
   color: var(--text);
   text-decoration: none;
 }
@@ -1390,13 +1401,13 @@ select:focus-visible,
 .help-body dd { margin: 0; }
 .help-license {
   white-space: pre-wrap; margin: 0 0 12px; padding: 12px 14px; font: 12.5px/1.5 Consolas, "Liberation Mono", monospace;
-  background: var(--bg); border: 1px solid var(--border-soft); border-radius: 8px;
+  background: var(--bg-soft); border: 1px solid var(--border-soft); border-radius: 8px;
 }
 .sc-group { margin: 14px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
 .sc-row { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; border-bottom: 1px solid var(--border-soft); }
 .sc-row kbd {
   font: 12px Consolas, "Liberation Mono", monospace; padding: 2px 7px; white-space: nowrap;
-  background: var(--bg); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px;
+  background: var(--bg-soft); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px;
 }
 
 /* ================= Tables ================= */
@@ -1474,7 +1485,7 @@ body.viewing .rich-editor { cursor: default; }
 .minimap.hidden { display: none; }
 .mm-inner { position: absolute; left: 0; top: 0; width: 120px; will-change: transform; pointer-events: none; }
 .mm-page {
-  transform-origin: 0 0; pointer-events: none; opacity: .85;
+  transform-origin: 0 0; pointer-events: none; opacity: 1;
   min-height: 0 !important; border: 0 !important; background: var(--surface);
 }
 .mm-slider {
