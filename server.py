@@ -213,6 +213,18 @@ class DoclyHandler(BaseHTTPRequestHandler):
             self._send_json(200, data)
             return
 
+        m = re.match(r"^/api/documents/([^/]+)/path$", path)
+        if m:
+            doc_id = unquote(m.group(1))
+            with _lock:
+                data, folder = load_doc(doc_id)
+            if not data:
+                self._send_error_json(404, "Document not found")
+                return
+            doc_path = os.path.join(DOCS_DIR, folder)
+            self._send_json(200, {"path": doc_path})
+            return
+
         if path.startswith("/api/"):
             self._send_error_json(404, "Endpoint not found")
             return

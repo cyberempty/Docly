@@ -69,15 +69,22 @@
               <svg class="ic-list" viewBox="0 0 24 24"><path d="M4 14h4v-4H4v4zm0 5h4v-4H4v4zM4 9h4V5H4v4zm5 5h12v-4H9v4zm0 5h12v-4H9v4zM9 5v4h12V5H9z"/></svg>
               <svg class="ic-grid" viewBox="0 0 24 24"><path d="M3 3v8h8V3H3zm6 6H5V5h4v4zm-6 4v8h8v-8H3zm6 6H5v-4h4v4zm4-16v8h8V3h-8zm6 6h-4V5h4v4zm-6 4v8h8v-8h-8zm6 6h-4v-4h4v4z"/></svg>
             </button>
+          <button id="homeHelpBtn" class="icon-btn home-help-btn" title="Help (F1)" aria-haspopup="true">
+            <svg viewBox="0 0 24 24"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/></svg>
+          </button>
         </div>
       </header>
       <div class="home-body">
         <div class="home-inner">
           <h2 class="home-section-title">Create a new document</h2>
           <div class="home-new-wrap">
-            <button id="homeNewBtn" class="home-new-card" title="New document">
+            <button id="homeNewBtn" class="home-new-card" title="Create new document">
               <span class="home-new-thumb"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M22 8h4v14h14v4H26v14h-4V26H8v-4h14z"/></svg></span>
-              <span class="home-new-label">Blank document</span>
+              <span class="home-new-label">Create new document</span>
+            </button>
+            <button id="homeImportBtn" class="home-new-card" title="Import JSON">
+              <span class="home-new-thumb"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4l-4 4h3v12h2V8h3zM12 36v-4H8v8h32v-8h-4v4z"/></svg></span>
+              <span class="home-new-label">Import JSON</span>
             </button>
           </div>
 
@@ -92,6 +99,9 @@
           <div id="homeContent" class="home-content"></div>
         </div>
       </div>
+      <footer class="home-footer">
+            <p>Protect and encrypt your documents and files with <a href="https://github.com/cyberempty/Crypton" target="_blank" rel="noopener noreferrer" class="crypton-link">Crypton</a>.</p>
+          </footer>
     </div>
 
     <div id="editorWrap" class="editor-wrap hidden">
@@ -123,10 +133,6 @@
           <button class="menu-btn" data-menu="tools">Tools</button>
           <button class="menu-btn" data-menu="help">Help</button>
         </nav>
-        <div id="tagsRow" class="tags-row">
-          <div id="tagsList" class="tags-list"></div>
-          <input id="tagInput" class="tag-input" placeholder="+ add tag and press Enter">
-        </div>
       </header>
 
       <div id="toolbar" class="toolbar">
@@ -250,6 +256,11 @@
           <div id="mmSlider" class="mm-slider"></div>
         </div>
       </div>
+      <div id="statusBar" class="status-bar">
+        <span id="statusPos" class="status-item">Ln 1, Col 1</span>
+        <span id="statusChars" class="status-item">0 characters</span>
+        <span id="statusWords" class="status-item">0 words</span>
+      </div>
     </div>
   </main>
 </div>
@@ -274,6 +285,7 @@
 <div id="sizeMenu" class="size-menu hidden"></div>
 <div id="colorPanel" class="color-panel hidden"></div>
 <input type="color" id="cpNative" class="cp-native" tabindex="-1" aria-hidden="true">
+<input type="file" id="jsonImportInput" accept=".json,application/json" class="hidden">
 
 <div id="modalOverlay" class="modal-overlay hidden">
   <div id="modal" class="modal">

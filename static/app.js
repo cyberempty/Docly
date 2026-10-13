@@ -36,9 +36,6 @@
   const saveStatus = el("saveStatus");
   const favBtn = el("favBtn");
   const deleteBtn = el("deleteBtn");
-  const tagsRow = el("tagsRow");
-  const tagsList = el("tagsList");
-  const tagInput = el("tagInput");
   const toolbar = el("toolbar");
   const richEditor = el("richEditor");
   const newDocBtn = el("newDocBtn");
@@ -362,6 +359,13 @@
     renderHome();
   });
   el("homeNewBtn").addEventListener("click", () => newDocBtn.click());
+  const jsonImportInput = el("jsonImportInput");
+  el("homeImportBtn").addEventListener("click", () => jsonImportInput.click());
+  jsonImportInput.addEventListener("change", () => {
+    const f = jsonImportInput.files && jsonImportInput.files[0];
+    if (f) doImportJson(f);
+    jsonImportInput.value = "";
+  });
 
   function escapeHtml(s) {
     return (s || "").replace(/[&<>"']/g, (c) => ({
@@ -399,6 +403,7 @@
     if (window.__doclyAfterOpen) window.__doclyAfterOpen();
 
     renderList();
+    updateStatusBar();
   }
 
   function closeEditor() {
@@ -412,6 +417,7 @@
     void homeView.offsetWidth;
     homeView.classList.add("home-enter");
     renderList();
+    updateStatusBar();
   }
 
   async function goHome() {
@@ -422,40 +428,56 @@
   }
 
 
-  function renderTags() {
-    tagsList.innerHTML = "";
-    const tags = (state.currentDoc && state.currentDoc.tags) || [];
-    for (const tag of tags) {
-      const chip = document.createElement("span");
-      chip.className = "tag-chip";
-      chip.innerHTML = `<span>${escapeHtml(tag)}</span>`;
-      const rm = document.createElement("button");
-      rm.textContent = "✕";
-      rm.addEventListener("click", () => {
-        state.currentDoc.tags = state.currentDoc.tags.filter((t) => t !== tag);
-        renderTags();
-        scheduleSave();
-      });
-      chip.appendChild(rm);
-      tagsList.appendChild(chip);
-    }
-  }
+  function renderTags() { /* tags are managed from File > Tags */ }
 
-  tagInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const val = tagInput.value.trim();
-      if (val && state.currentDoc) {
-        state.currentDoc.tags = state.currentDoc.tags || [];
-        if (!state.currentDoc.tags.includes(val)) {
-          state.currentDoc.tags.push(val);
-          renderTags();
-          scheduleSave();
-        }
-      }
-      tagInput.value = "";
-    }
-  });
+  // ---- Tags dialog (File > Tags): add several tags at once, remove them, all in one place
+  function openTagsDialog() {
+    if (!state.currentDoc) { showToast("Open a document first"); return; }
+    const ov = document.createElement("div");
+    ov.className = "modal-overlay";
+    const box = document.createElement("div");
+    box.className = "modal tags-dialog";
+    box.innerHTML = '<div class="modal-header"><h3>Tags</h3><button class="modal-close" type="button">&times;</button></div>' +
+      '<div class="modal-body"><p class="tags-help">Add one or more tags (separate them with commas), then press Enter.</p>' +
+      '<div class="tags-dialog-list"></div>' +
+      '<div class="tags-dialog-add"><input type="text" class="modal-input" placeholder="e.g. work, ideas, 2026" autocomplete="off"><button type="button" class="modal-btn modal-btn-ok">Add</button></div>' +
+      '<div class="modal-buttons"><button type="button" class="modal-btn modal-btn-ok tags-done">Done</button></div></div>';
+    const list = box.querySelector(".tags-dialog-list");
+    const input = box.querySelector("input");
+    const draw = () => {
+      list.innerHTML = "";
+      const tags = state.currentDoc.tags || [];
+      if (!tags.length) { const n = document.createElement("div"); n.className = "tags-empty"; n.textContent = "No tags yet."; list.appendChild(n); return; }
+      tags.forEach((tag) => {
+        const chip = document.createElement("span");
+        chip.className = "tag-chip";
+        const t = document.createElement("span"); t.textContent = tag; chip.appendChild(t);
+        const rm = document.createElement("button"); rm.type = "button"; rm.title = "Remove tag"; rm.textContent = "✕";
+        rm.addEventListener("click", () => { state.currentDoc.tags = state.currentDoc.tags.filter((x) => x !== tag); draw(); scheduleSave(); });
+        chip.appendChild(rm); list.appendChild(chip);
+      });
+    };
+    const add = () => {
+      const parts = input.value.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!parts.length) return;
+      state.currentDoc.tags = state.currentDoc.tags || [];
+      parts.forEach((p) => { if (!state.currentDoc.tags.includes(p)) state.currentDoc.tags.push(p); });
+      input.value = "";
+      draw(); scheduleSave();
+    };
+    const close = () => { add(); document.removeEventListener("keydown", onKey, true); ov.remove(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); close(); }
+      else if (e.key === "Enter" && e.target === input) { e.preventDefault(); e.stopPropagation(); add(); }
+    };
+    document.addEventListener("keydown", onKey, true);
+    ov.addEventListener("mousedown", (e) => { if (e.target === ov) close(); });
+    box.querySelector(".modal-close").onclick = close;
+    box.querySelector(".tags-done").onclick = close;
+    box.querySelector(".tags-dialog-add .modal-btn").onclick = add;
+    ov.appendChild(box); document.body.appendChild(ov);
+    draw(); input.focus();
+  }
 
   function setSaveStatus(status) {
     if (status === "saving") {
@@ -473,6 +495,27 @@
     setSaveStatus("saving");
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => doSave(false), 700);
+  }
+
+  const statusPos = el("statusPos"), statusChars = el("statusChars"), statusWords = el("statusWords");
+  function updateStatusBar() {
+    let chars = 0, words = 0, line = 1, col = 1;
+    if (state.currentDoc) {
+      const text = richEditor.innerText || "";
+      chars = text.replace(/\n/g, "").length;
+      words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const range = sel.getRangeAt(0).cloneRange();
+        range.setStart(richEditor, 0);
+        const before = range.toString();
+        line = before.split("\n").length;
+        col = before.length - before.lastIndexOf("\n");
+      }
+    }
+    if (statusPos) statusPos.textContent = "Ln " + line + ", Col " + col;
+    if (statusChars) statusChars.textContent = chars + " character" + (chars === 1 ? "" : "s");
+    if (statusWords) statusWords.textContent = words + " word" + (words === 1 ? "" : "s");
   }
 
   async function doSave(immediate) {
@@ -510,6 +553,10 @@
   }
 
   richEditor.addEventListener("input", scheduleSave);
+  richEditor.addEventListener("input", updateStatusBar);
+  richEditor.addEventListener("keyup", updateStatusBar);
+  richEditor.addEventListener("mouseup", updateStatusBar);
+  document.addEventListener("selectionchange", () => { if (state.currentDoc && document.activeElement === richEditor) updateStatusBar(); });
 
   /* keyboard shortcuts: see the "Keyboard shortcuts (Google Docs style)" section below */
 
@@ -542,6 +589,56 @@
       fitTitle();
     }
   });
+
+  // ---- Automatic title: the first sentence written in the document becomes its title
+  const DEFAULT_TITLE_RE = /^(untitled( document)?|new document)(\s*\(\d+\))?$/i;
+  const cleanTitle = (t) => (t || "").replace(/[\\/:*?"<>|\x00-\x1f]/g, "").replace(/\s+/g, " ").replace(/^[ .]+|[ .]+$/g, "");
+  function firstSentence() {
+    const text = (richEditor.innerText || "").replace(/\u00a0/g, " ").replace(/\u200b/g, "");
+    const line = text.split("\n").map((s) => s.trim()).find((s) => s.length > 0) || "";
+    if (!line) return "";
+    const m = line.match(/^(.+?[.!?])(\s|$)/);
+    let s = (m ? m[1] : line).replace(/[.!?]+$/, "").trim();
+    if (s.length > 80) {
+      s = s.slice(0, 80);
+      const sp = s.lastIndexOf(" ");
+      if (sp > 30) s = s.slice(0, sp);
+      s = s.trim();
+    }
+    return s;
+  }
+  let autoTitleTimer = null;
+  function scheduleAutoTitle() {
+    clearTimeout(autoTitleTimer);
+    autoTitleTimer = setTimeout(autoTitle, 900);
+  }
+  async function autoTitle() {
+    const doc = state.currentDoc, id = state.currentId;
+    if (!doc || !id || document.activeElement === titleInput) return;
+    const cur = doc.title || "";
+    const last = LS.get("docly-autotitle:" + id, "");
+    // only while the title is still a default one, or was set by this feature (not renamed by hand)
+    if (!(DEFAULT_TITLE_RE.test(cur) || (last && cur === last))) return;
+    const next = cleanTitle(firstSentence());
+    if (!next || next === cur) return;
+    try {
+      const updated = await api("/api/documents/" + encodeURIComponent(id) + "/rename", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+      if (state.currentId !== id) return;
+      doc.title = updated.title;
+      titleInput.value = updated.title;
+      fitTitle();
+      lastSavedTitle = updated.title;
+      LS.set("docly-autotitle:" + id, updated.title);
+      const idx = state.documents.findIndex((d) => d.id === updated.id);
+      if (idx >= 0) { state.documents[idx].title = updated.title; state.documents[idx].updatedAt = updated.updatedAt; }
+      renderList();
+    } catch (_) { /* the title simply stays as it is */ }
+  }
+  richEditor.addEventListener("input", scheduleAutoTitle);
 
   async function toggleFavorite(id) {
     try {
@@ -836,7 +933,7 @@
     colorMode = null;
   }
 
-  function applyColor(mode, color) {
+  function applyColor(mode, color, keepOpen) {
     restoreSelection();
     document.execCommand("styleWithCSS", false, true);
     if (mode === "text") {
@@ -846,23 +943,52 @@
       if (color) lastHighlight = color;
     }
     document.execCommand("styleWithCSS", false, false);
-    if (color && !PALETTE.some((row) => row.includes(color))) {
+    if (color && keepOpen !== "skip") {
       recentColors = [color, ...recentColors.filter((c) => c !== color)].slice(0, 10);
       try { localStorage.setItem("docly-recent-colors", JSON.stringify(recentColors)); } catch (_) {}
     }
-    closeColorPanel();
+    if (!keepOpen) closeColorPanel();
     syncToolbar();
     scheduleSave();
   }
 
-  function swatch(color, mode) {
-    const b = document.createElement("button");
-    b.className = "cp-swatch";
-    b.style.background = color;
-    b.title = color;
-    b.addEventListener("click", () => applyColor(mode, color));
-    return b;
+  const cpHsv2rgb = (h, s, v) => {
+    const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return [Math.round(f(5) * 255), Math.round(f(3) * 255), Math.round(f(1) * 255)];
+  };
+  const cpRgb2hsv = (r, g, b) => {
+    r /= 255; g /= 255; b /= 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0;
+    if (d) {
+      if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+      h = (h * 60 + 360) % 360;
+    }
+    return [h, mx ? d / mx : 0, mx];
+  };
+  const cpHex = (r, g, b) => "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  const cpParse = (str) => {
+    str = String(str || "").trim();
+    let m = str.match(/^#?([0-9a-f]{6})$/i);
+    if (m) { const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+    m = str.match(/^#?([0-9a-f]{3})$/i);
+    if (m) { const x = m[1]; return [parseInt(x[0] + x[0], 16), parseInt(x[1] + x[1], 16), parseInt(x[2] + x[2], 16)]; }
+    m = str.match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/);
+    if (m && !(m[4] !== undefined && parseFloat(m[4]) === 0)) return [+m[1], +m[2], +m[3]];
+    return null;
+  };
+  function cpCurrentColor(mode) {
+    let n = activeElement();
+    if (!n) return null;
+    if (mode === "text") return cpParse(window.getComputedStyle(n).color);
+    while (n && n !== richEditor) {
+      const p = cpParse(window.getComputedStyle(n).backgroundColor);
+      if (p) return p;
+      n = n.parentElement;
+    }
+    return null;
   }
+  const EYEDROPPER_SVG = '<svg viewBox="0 0 24 24"><path d="M20.71 5.63l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
 
   function openColorPanel(mode) {
     if (colorMode === mode) { closeColorPanel(); return; }
@@ -879,32 +1005,115 @@
     reset.addEventListener("click", () => applyColor(mode, null));
     colorPanel.appendChild(reset);
 
-    const grid = document.createElement("div");
-    grid.className = "cp-grid";
-    PALETTE.forEach((row) => row.forEach((c) => grid.appendChild(swatch(c, mode))));
-    colorPanel.appendChild(grid);
+    const sv = document.createElement("div");
+    sv.className = "cp-sv";
+    sv.innerHTML = '<div class="cp-sv-handle"></div>';
+    colorPanel.appendChild(sv);
 
-    const custom = document.createElement("div");
-    custom.className = "cp-custom";
+    const mid = document.createElement("div");
+    mid.className = "cp-mid";
+    mid.innerHTML = '<button type="button" class="cp-eye" title="Pick a color from the screen (eyedropper)">' + EYEDROPPER_SVG + '</button>' +
+      '<span class="cp-preview" title="Selected color"></span>' +
+      '<div class="cp-hue"><div class="cp-hue-thumb"></div></div>';
+    colorPanel.appendChild(mid);
+
+    const rgb = document.createElement("div");
+    rgb.className = "cp-rgb";
+    rgb.innerHTML = ["R", "G", "B"].map((l) => '<label><input class="cp-num" data-ch="' + l + '" inputmode="numeric" maxlength="3" autocomplete="off"><span>' + l + '</span></label>').join("") +
+      '<label class="cp-hex-wrap"><input class="cp-hex" maxlength="7" autocomplete="off" spellcheck="false"><span>HEX</span></label>';
+    colorPanel.appendChild(rgb);
+
     const lbl = document.createElement("div");
     lbl.className = "cp-label";
-    lbl.textContent = "Custom";
-    custom.appendChild(lbl);
-    const row = document.createElement("div");
-    row.className = "cp-recent";
-    const plus = document.createElement("button");
-    plus.className = "cp-swatch cp-plus";
-    plus.title = "Custom color";
-    plus.textContent = "+";
-    plus.addEventListener("click", () => {
-      cpNative.value = "#000000";
-      cpNative.onchange = () => applyColor(mode, cpNative.value);
-      cpNative.click();
+    lbl.textContent = "Recent";
+    const recent = document.createElement("div");
+    recent.className = "cp-recent";
+    if (recentColors.length) { colorPanel.appendChild(lbl); colorPanel.appendChild(recent); }
+
+    const handle = sv.firstChild, hue = mid.querySelector(".cp-hue"), thumb = hue.firstChild;
+    const preview = mid.querySelector(".cp-preview"), eye = mid.querySelector(".cp-eye");
+    const nums = Array.from(rgb.querySelectorAll(".cp-num")), hexIn = rgb.querySelector(".cp-hex");
+
+    const start = cpCurrentColor(mode) || cpParse(mode === "text" ? "#000000" : lastHighlight) || [0, 0, 0];
+    let [H, S, V] = cpRgb2hsv(start[0], start[1], start[2]);
+
+    function render(skip) {
+      const [r, g, b] = cpHsv2rgb(H, S, V);
+      sv.style.background = "linear-gradient(to top,#000,rgba(0,0,0,0)),linear-gradient(to right,#fff,hsl(" + H + ",100%,50%))";
+      handle.style.left = S * 100 + "%";
+      handle.style.top = (1 - V) * 100 + "%";
+      thumb.style.left = (H / 360) * 100 + "%";
+      preview.style.background = cpHex(r, g, b);
+      [r, g, b].forEach((v, i) => { if (nums[i] !== skip) nums[i].value = v; });
+      if (hexIn !== skip) hexIn.value = cpHex(r, g, b).toUpperCase();
+    }
+    const commit = () => applyColor(mode, cpHex(...cpHsv2rgb(H, S, V)), true);
+    const setRgb = (r, g, b, keepHue) => {
+      const [h, s, v] = cpRgb2hsv(r, g, b);
+      H = keepHue && (s === 0 || v === 0) ? H : h; S = s; V = v;
+    };
+
+    const drag = (target, onMove) => {
+      target.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        target.setPointerCapture(e.pointerId);
+        onMove(e);
+        const mv = (ev) => onMove(ev);
+        const up = () => { target.removeEventListener("pointermove", mv); target.removeEventListener("pointerup", up); commit(); };
+        target.addEventListener("pointermove", mv);
+        target.addEventListener("pointerup", up);
+      });
+    };
+    const clamp01 = (x) => Math.max(0, Math.min(1, x));
+    drag(sv, (e) => {
+      const r = sv.getBoundingClientRect();
+      S = clamp01((e.clientX - r.left) / r.width);
+      V = 1 - clamp01((e.clientY - r.top) / r.height);
+      render();
     });
-    row.appendChild(plus);
-    recentColors.forEach((c) => row.appendChild(swatch(c, mode)));
-    custom.appendChild(row);
-    colorPanel.appendChild(custom);
+    drag(hue, (e) => {
+      const r = hue.getBoundingClientRect();
+      H = clamp01((e.clientX - r.left) / r.width) * 360;
+      render();
+    });
+
+    nums.forEach((inp, i) => {
+      inp.addEventListener("input", () => {
+        inp.value = inp.value.replace(/\D/g, "").slice(0, 3);
+        const cur = cpHsv2rgb(H, S, V);
+        cur[i] = Math.max(0, Math.min(255, parseInt(inp.value || "0", 10)));
+        setRgb(cur[0], cur[1], cur[2], true);
+        render(inp);
+      });
+      inp.addEventListener("change", () => { render(); commit(); });
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
+    });
+    hexIn.addEventListener("input", () => {
+      const p = cpParse(hexIn.value);
+      if (p) { setRgb(p[0], p[1], p[2], true); render(hexIn); }
+    });
+    hexIn.addEventListener("change", () => { render(); commit(); });
+    hexIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); hexIn.blur(); } });
+
+    eye.addEventListener("click", async () => {
+      if (!window.EyeDropper) { showToast("The eyedropper needs Chrome or Edge"); return; }
+      try {
+        const res = await new window.EyeDropper().open();
+        const p = cpParse(res.sRGBHex);
+        if (p) { setRgb(p[0], p[1], p[2], true); render(); commit(); }
+      } catch (_) { /* cancelled */ }
+    });
+
+    recentColors.forEach((col) => {
+      const b = document.createElement("button");
+      b.className = "cp-swatch";
+      b.style.background = col;
+      b.title = col;
+      b.addEventListener("click", () => { const p = cpParse(col); if (p) { setRgb(p[0], p[1], p[2], true); render(); commit(); } });
+      recent.appendChild(b);
+    });
+
+    render();
 
     const btn = colorBtn(mode);
     btn.classList.add("open");
@@ -915,7 +1124,7 @@
     colorPanel.style.top = r.bottom + 4 + "px";
   }
 
-  colorPanel.addEventListener("mousedown", (e) => e.preventDefault());
+  colorPanel.addEventListener("mousedown", (e) => { if (!e.target.closest("input")) e.preventDefault(); });
   el("textColorBtn").addEventListener("click", () => openColorPanel("text"));
   el("highlightBtn").addEventListener("click", () => openColorPanel("highlight"));
 
@@ -1079,11 +1288,12 @@ ${contentHtml()}
     return m[2] ? m[1] + mark + m[2] + mark + m[3] : s;
   }
   function mdInline(n) {
-    if (n.nodeType === 3) return n.nodeValue.replace(/\s+/g, " ").replace(/([\\`*_\[\]])/g, "\\$1");
+    if (n.nodeType === 3) return n.nodeValue.replace(/\u200b/g, "").replace(/\s+/g, " ").replace(/([\\`*_\[\]])/g, "\\$1");
     if (n.nodeType !== 1) return "";
     const tag = n.tagName;
     if (tag === "BR") return "  \n";
     if (tag === "IMG") return "";
+    if (tag === "A" && n.hasAttribute("data-bookmark")) return n.id ? `<a id="${n.id}"></a>` : "";
     if (tag === "CODE") return n.textContent ? "`" + n.textContent + "`" : "";
     let s = Array.from(n.childNodes).map(mdInline).join("");
     const css = n.style || {};
@@ -1147,7 +1357,7 @@ ${contentHtml()}
   }
   function mdBlock(n) {
     const tag = n.tagName;
-    if (/^H[1-6]$/.test(tag)) return "#".repeat(+tag[1]) + " " + mdInline(n).trim();
+    if (/^H[1-6]$/.test(tag)) return (n.id ? `<a id="${n.id}"></a>\n` : "") + "#".repeat(+tag[1]) + " " + mdInline(n).trim();
     if (tag === "UL" || tag === "OL") return mdList(n, 0);
     if (tag === "BLOCKQUOTE") return mdBlocks(n).split("\n").map((l) => "> " + l).join("\n");
     if (tag === "PRE") return "```\n" + n.textContent.replace(/\n$/, "") + "\n```";
@@ -1194,7 +1404,7 @@ ${contentHtml()}
     if (t === "SUP") s.sup = true;
     if (t === "SUB") s.sub = true;
     if (t === "CODE" || t === "PRE") s.font = "Courier New";
-    if (t === "A") { s.link = elm.getAttribute("href") || ""; s.u = true; s.color = "1155CC"; }
+    if (t === "A" && elm.hasAttribute("href")) { s.link = elm.getAttribute("href") || ""; s.u = true; s.color = "1155CC"; }
     if (t === "FONT") {
       const face = elm.getAttribute("face");
       if (face) s.font = face.split(",")[0].replace(/["']/g, "").trim();
@@ -1241,7 +1451,7 @@ ${contentHtml()}
         if (first && first.text) first.text = first.text.replace(/^\s+/, "");
         if (last && last.text) last.text = last.text.replace(/\s+$/, "");
       }
-      p.runs = p.runs.filter((r) => r.br || r.text);
+      p.runs = p.runs.filter((r) => r.br || r.text || r.anchor);
       if (p.runs.length || hadBr) out.push(p);
     };
     const blockProps = (elm, base) => {
@@ -1254,6 +1464,7 @@ ${contentHtml()}
       if (ti) p.firstLine = ti;
       const lh = parseFloat(css.lineHeight);
       if (lh) p.line = lh;
+      p.anchors = elm.id ? [elm.id] : undefined;      // headings / blocks that links can point to
       return p;
     };
 
@@ -1280,7 +1491,7 @@ ${contentHtml()}
           });
           return;
         }
-        const t = n.nodeValue.replace(/\s+/g, " ");
+        const t = n.nodeValue.replace(/\u200b/g, "").replace(/\s+/g, " ");
         if (!t.trim() && !cur) return;
         ensure(props).runs.push({ text: t, ...st });
         return;
@@ -1288,6 +1499,10 @@ ${contentHtml()}
       if (n.nodeType !== 1) return;
       const tag = n.tagName;
       if (tag === "BR") { ensure(props).runs.push({ br: true }); return; }
+      if (tag === "A" && n.hasAttribute("data-bookmark")) {      // a bookmark: a spot that links can jump to
+        if (n.id) ensure(props).runs.push({ anchor: n.id });
+        return;
+      }
       if (tag === "IMG") return;
       if (tag === "HR") { flush(); out.push({ type: "hr" }); return; }
       if (tag === "TABLE") {
@@ -1405,7 +1620,14 @@ ${contentHtml()}
     const JC = { left: "left", center: "center", right: "right", justify: "both" };
     const BULLETS = ["\u2022", "\u25E6", "\u25AA"];
 
+    let bmCounter = 0;
+    const bmName = (id) => "bm_" + String(id).replace(/[^A-Za-z0-9_]/g, "_").slice(0, 36);
+    const bookmarkXml = (id) => {
+      const n = ++bmCounter;
+      return `<w:bookmarkStart w:id="${n}" w:name="${bmName(id)}"/><w:bookmarkEnd w:id="${n}"/>`;
+    };
     const runXml = (r) => {
+      if (r.anchor) return bookmarkXml(r.anchor);
       if (r.br) return "<w:r><w:br/></w:r>";
       let pr = "";
       if (r.font) pr += `<w:rFonts w:ascii="${escXml(r.font)}" w:hAnsi="${escXml(r.font)}" w:cs="${escXml(r.font)}"/>`;
@@ -1439,14 +1661,16 @@ ${contentHtml()}
       if (p.align && JC[p.align]) ppr += `<w:jc w:val="${JC[p.align]}"/>`;
       if (p.heading && p.heading <= 3) ppr += `<w:outlineLvl w:val="${p.heading - 1}"/>`;
 
-      let body = prefix;
+      let body = (p.anchors || []).map(bookmarkXml).join("") + prefix;
       for (let i = 0; i < p.runs.length; ) {
         const r = p.runs[i];
         if (r.link) {
           let inner = "";
           let j = i;
           while (j < p.runs.length && p.runs[j].link === r.link) inner += runXml(p.runs[j++]);
-          body += `<w:hyperlink r:id="${linkId(r.link)}" w:history="1">${inner}</w:hyperlink>`;
+          body += r.link.charAt(0) === "#"
+            ? `<w:hyperlink w:anchor="${bmName(r.link.slice(1))}" w:history="1">${inner}</w:hyperlink>`      // jumps to a bookmark in the document
+            : `<w:hyperlink r:id="${linkId(r.link)}" w:history="1">${inner}</w:hyperlink>`;
           i = j;
         } else {
           body += runXml(r);
@@ -1535,7 +1759,10 @@ ${contentHtml()}
     const ALIGN = { left: "\\ql", center: "\\qc", right: "\\qr", justify: "\\qj" };
     const BULLETS = ["\u2022", "\u25E6", "\u25AA"];
 
+    const bmName = (id) => "bm_" + String(id).replace(/[^A-Za-z0-9_]/g, "_").slice(0, 36);
+    const rtfBookmark = (id) => `{\\*\\bkmkstart ${bmName(id)}}{\\*\\bkmkend ${bmName(id)}}`;
     const runRtf = (r) => {
+      if (r.anchor) return rtfBookmark(r.anchor);
       if (r.br) return "\\line ";
       let s = `\\f${fontIdx(r.font)}\\fs${Math.round((r.size || 13) * 2)}`;
       if (r.b) s += "\\b";
@@ -1547,6 +1774,27 @@ ${contentHtml()}
       if (r.color) s += `\\cf${colorIdx(r.color)}`;
       if (r.bg) s += `\\highlight${colorIdx(r.bg)}`;
       return `{${s} ${esc(r.text)}}`;
+    };
+    // consecutive runs that share a link become one clickable field
+    const runsRtf = (runs) => {
+      let out = "";
+      for (let i = 0; i < runs.length; ) {
+        const r = runs[i];
+        if (r.link) {
+          let g = "";
+          let j = i;
+          while (j < runs.length && runs[j].link === r.link) g += runRtf(runs[j++]);
+          const inst = r.link.charAt(0) === "#"
+            ? `HYPERLINK \\l "${bmName(r.link.slice(1))}"`
+            : `HYPERLINK "${r.link.replace(/[\\"{}]/g, "")}"`;
+          out += `{\\field{\\*\\fldinst{${inst}}}{\\fldrslt ${g}}}`;
+          i = j;
+        } else {
+          out += runRtf(r);
+          i++;
+        }
+      }
+      return out;
     };
     const paraRtf = (p, inCell) => {
       let s = "\\pard" + (inCell ? "\\intbl" : "");
@@ -1563,7 +1811,7 @@ ${contentHtml()}
       if (first) s += `\\fi${first}`;
       if (p.align && ALIGN[p.align]) s += ALIGN[p.align];
       if (p.line) s += `\\sl${Math.round(p.line * 240)}\\slmult1`;
-      return s + " " + prefix + p.runs.map(runRtf).join("");
+      return s + " " + prefix + (p.anchors || []).map(rtfBookmark).join("") + runsRtf(p.runs);
     };
     const blocksRtf = (list, inCell) => list.map((b) => {
       if (b.type === "hr") return "\\pard\\brdrb\\brdrs\\brdrw10\\brsp20 \\par\n";
@@ -1651,13 +1899,14 @@ ${contentHtml()}
       .replace(/\t/g, "<text:tab/>")
       .replace(/ {2,}/g, (m) => ` <text:s text:c="${m.length - 1}"/>`);
     const runOdt = (r) => {
+      if (r.anchor) return `<text:bookmark text:name="${escXml(r.anchor)}"/>`;
       if (r.br) return "<text:line-break/>";
       const sn = textStyle(r);
       const t = odtText(r.text);
       return sn ? `<text:span text:style-name="${sn}">${t}</text:span>` : t;
     };
     const paraOdt = (p) => {
-      let inner = "";
+      let inner = (p.anchors || []).map((id) => `<text:bookmark text:name="${escXml(id)}"/>`).join("");
       if (p.list) {
         const label = p.list.ordered ? `${p.list.index}.` : BULLETS[p.list.level % 3];
         inner += `${escXml(label)}<text:tab/>`;
@@ -1737,7 +1986,7 @@ ${contentHtml()}
 
     const toc = [];
     box.querySelectorAll("h1, h2, h3").forEach((h, i) => {
-      h.id = "sec" + (i + 1);
+      if (!h.id) h.id = "sec" + (i + 1);
       toc.push({ id: h.id, text: h.textContent.trim() || "Untitled" });
     });
 
@@ -1771,18 +2020,266 @@ ${contentHtml()}
     showToast("Exported as EPUB");
   }
 
-  // ---- PDF: uses the browser's own PDF writer (the document title becomes the file name)
+  // ---- PDF: a minimal direct PDF writer (no browser headers/footers, direct download)
+  const HELV_WIDTHS = (() => {
+    const w = new Uint16Array(128);
+    const table = { " ":278,"!":278,"\"":355,"#":556,"$":556,"%":889,"&":667,"'":191,"(":333,")":333,"*":389,"+":584,",":278,"-":333,".":278,"/":278,"0":556,"1":556,"2":556,"3":556,"4":556,"5":556,"6":556,"7":556,"8":556,"9":556,":":278,";":278,"<":584,"=":584,">":584,"?":556,"@":1015,"A":667,"B":667,"C":722,"D":722,"E":667,"F":611,"G":778,"H":722,"I":278,"J":500,"K":667,"L":556,"M":833,"N":722,"O":778,"P":667,"Q":778,"R":722,"S":667,"T":611,"U":722,"V":667,"W":944,"X":667,"Y":667,"Z":611,"[":278,"\\":278,"]":278,"^":469,"_":556,"`":333,"a":556,"b":556,"c":500,"d":556,"e":556,"f":278,"g":556,"h":556,"i":222,"j":222,"k":500,"l":222,"m":833,"n":556,"o":556,"p":556,"q":556,"r":333,"s":500,"t":278,"u":556,"v":500,"w":722,"x":500,"y":500,"z":500,"{":334,"|":260,"}":334,"~":584 };
+    for (let i = 0; i < 128; i++) w[i] = 500;
+    for (const k in table) w[k.charCodeAt(0)] = table[k];
+    return w;
+  })();
+  const WIDE_CHARS = { 0x2014: 1000, 0x2026: 1000, 0x2022: 350, 0x2018: 222, 0x2019: 222, 0x201C: 333, 0x201D: 333, 0x2122: 1000 };
+  function textWidth(str, size, mono, bold) {
+    if (mono) return (str.length * 600) / 1000 * size;
+    if (bold) return textWidth(str, size, false, false) * 1.08;      // Helvetica-Bold glyphs are wider
+    let u = 0;
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      u += c < 128 ? HELV_WIDTHS[c] : (WIDE_CHARS[c] || 556);
+    }
+    return (u / 1000) * size;
+  }
+  function pdfEscape(s) { return s.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)"); }
+  // Standard PDF fonts: Helvetica (F1-F4) and Courier (F5-F8) in regular / bold / italic / bold-italic
+  function pdfFontName(bold, italic, mono) { return (mono ? "F5" : "F1").replace(/\d/, (d) => String(+d + (bold ? (italic ? 3 : 1) : (italic ? 2 : 0)))); }
+  const WIN1252 = { 0x20AC: 0x80, 0x201A: 0x82, 0x0192: 0x83, 0x201E: 0x84, 0x2026: 0x85, 0x2020: 0x86, 0x2021: 0x87, 0x02C6: 0x88, 0x2030: 0x89, 0x0160: 0x8A, 0x2039: 0x8B, 0x0152: 0x8C, 0x017D: 0x8E, 0x2018: 0x91, 0x2019: 0x92, 0x201C: 0x93, 0x201D: 0x94, 0x2022: 0x95, 0x2013: 0x96, 0x2014: 0x97, 0x02DC: 0x98, 0x2122: 0x99, 0x0161: 0x9A, 0x203A: 0x9B, 0x0153: 0x9C, 0x017E: 0x9E, 0x0178: 0x9F };
+  // text -> single bytes in WinAnsi (accents, euro sign, bullets ... are preserved; other symbols become "?")
+  function pdfBytes(str) {
+    const out = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      out[i] = WIN1252[c] || (c < 256 && !(c >= 0x80 && c <= 0x9f) ? c : 0x3f);
+    }
+    return out;
+  }
+  const pdfColor = (hex) => {
+    const n = parseInt(hex, 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255].map((x) => x.toFixed(3)).join(" ");
+  };
+
+  function buildPdf() {
+    const model = exportModel();
+    const ps = pageSetup();
+    const pageW = ps.w / 20, pageH = ps.h / 20;
+    const marginTop = ps.top / 20, marginBottom = ps.bottom / 20, marginLeft = ps.left / 20, marginRight = ps.right / 20;
+    const usableW = pageW - marginLeft - marginRight;
+
+    const pages = [];                 // finished pages: { content: [], annots: [] }
+    let content = [], annots = [];
+    let y = pageH - marginTop;
+    const anchors = new Map();        // bookmark / heading id -> { page, y }
+
+    const newPage = () => { pages.push({ content, annots }); content = []; annots = []; y = pageH - marginTop; };
+    const ensureSpace = (h) => { if (y - h < marginBottom) newPage(); };
+
+    // ---- text -> styled tokens (words and spaces), then wrapped into lines
+    const isMono = (p, r) => !!(p && p.code) || /courier|mono|consolas/i.test((r && r.font) || "");
+    function tokenize(runs, p, baseSize) {
+      const tokens = [];
+      for (const r of runs) {
+        if (r.br) { tokens.push({ br: true }); continue; }
+        if (r.anchor) { tokens.push({ anchor: r.anchor, text: "", w: 0, size: baseSize }); continue; }
+        const st = { b: !!r.b, i: !!r.i, u: !!r.u, s: !!r.s, color: r.color || "", bg: r.bg || "", link: r.link || "", size: r.size || baseSize, mono: isMono(p, r) };
+        const parts = (r.text || "").split(" ");
+        parts.forEach((word, i) => {
+          if (i > 0) tokens.push({ ...st, text: " ", w: textWidth(" ", st.size, st.mono, st.b) });
+          if (word) tokens.push({ ...st, text: word, w: textWidth(word, st.size, st.mono, st.b) });
+        });
+      }
+      return tokens;
+    }
+    function wrapTokens(tokens, width, firstExtra) {
+      const lines = [];
+      let line = [], lw = 0, first = true;
+      for (const t of tokens) {
+        if (t.br) { lines.push(line); line = []; lw = 0; first = false; continue; }
+        const avail = width - (first ? firstExtra || 0 : 0);
+        if (lw + t.w > avail && line.length && t.text !== " ") { lines.push(line); line = []; lw = 0; first = false; }
+        if (!line.length && t.text === " " && lines.length) continue;   // no leading space on wrapped lines
+        line.push(t); lw += t.w;
+      }
+      if (line.length) lines.push(line);
+      return lines;
+    }
+    const sameStyle = (a, b) => a.b === b.b && a.i === b.i && a.u === b.u && a.s === b.s && a.color === b.color && a.bg === b.bg && a.link === b.link && a.size === b.size && a.mono === b.mono;
+    function mergeTokens(line) {
+      const segs = [];
+      for (const t of line) {
+        if (t.anchor) { segs.push(t); continue; }
+        const last = segs[segs.length - 1];
+        if (last && !last.anchor && sameStyle(last, t)) { last.text += t.text; last.w += t.w; }
+        else segs.push({ ...t });
+      }
+      return segs;
+    }
+    // Draws one line of tokens starting at x (baseline y). Underline, strike-through, highlight and link areas included.
+    function drawLine(line, x, yy) {
+      for (const sg of mergeTokens(line)) {
+        if (sg.anchor) { anchors.set(sg.anchor, { page: pages.length, y: yy + sg.size }); continue; }
+        if (!sg.text) continue;
+        const col = sg.color ? pdfColor(sg.color) : (sg.link ? pdfColor("1155CC") : "0 0 0");
+        if (sg.bg) content.push(pdfColor(sg.bg) + " rg " + x.toFixed(2) + " " + (yy - sg.size * 0.22).toFixed(2) + " " + sg.w.toFixed(2) + " " + (sg.size * 1.15).toFixed(2) + " re f");
+        content.push("BT", "/" + pdfFontName(sg.b, sg.i, sg.mono) + " " + sg.size + " Tf", col + " rg", x.toFixed(2) + " " + yy.toFixed(2) + " Td", "(" + pdfEscape(sg.text) + ") Tj", "ET");
+        if (sg.u || sg.link) content.push(col + " RG 0.6 w " + x.toFixed(2) + " " + (yy - 1.6).toFixed(2) + " m " + (x + sg.w).toFixed(2) + " " + (yy - 1.6).toFixed(2) + " l S");
+        if (sg.s) content.push(col + " RG 0.6 w " + x.toFixed(2) + " " + (yy + sg.size * 0.3).toFixed(2) + " m " + (x + sg.w).toFixed(2) + " " + (yy + sg.size * 0.3).toFixed(2) + " l S");
+        if (sg.link) annots.push({ rect: [x, yy - sg.size * 0.22, x + sg.w, yy + sg.size * 0.9], link: sg.link });
+        x += sg.w;
+      }
+    }
+    const lineSize = (line) => line.reduce((m, t) => Math.max(m, t.size || 0), 0) || 13;
+    const lineWidth = (line) => line.reduce((s, t) => s + (t.w || 0), 0);
+
+    function drawParagraph(p) {
+      const baseSize = 13;
+      const level = p.list ? p.list.level + 1 : 0;
+      const indent = (p.indent || 0) * 0.75 + (p.quote ? 18 : 0);
+      const firstIndent = (p.firstLine || 0) * 0.75;
+      const hang = p.list ? 18 : 0;
+      const left = marginLeft + indent + level * 20;
+      const availW = usableW - indent - level * 20 - (p.quote ? 6 : 0);
+      let tokens = tokenize(p.runs || [], p, baseSize);
+      if (p.list) {
+        const marker = p.list.ordered ? p.list.index + "." : "\u2022";
+        tokens.unshift({ text: marker, w: textWidth(marker, baseSize), size: baseSize, b: false, i: false, u: false, s: false, color: "", bg: "", link: "", mono: false, marker: true });
+      }
+      (p.anchors || []).forEach((id) => tokens.unshift({ anchor: id, text: "", w: 0, size: baseSize }));
+      const lines = wrapTokens(tokens, availW + hang, 0);
+      if (!lines.length) lines.push([]);
+      lines.forEach((ln, li) => {
+        const size = lineSize(ln);
+        const lh = size * (p.line || 1.2) + 3;
+        ensureSpace(lh);
+        let x = left - (li === 0 ? hang : 0) + (li === 0 ? firstIndent : 0);
+        // list items: marker hangs in the margin, text lines up under it
+        if (p.list && li > 0) x = left;
+        const w = lineWidth(ln);
+        if (p.align === "center") x = left + (availW - w) / 2;
+        else if (p.align === "right") x = left + availW - w;
+        const base = y - size;
+        if (p.code) content.push("0.953 0.953 0.953 rg " + (left - 4).toFixed(2) + " " + (y - lh).toFixed(2) + " " + (availW + 8).toFixed(2) + " " + lh.toFixed(2) + " re f");
+        if (p.quote) content.push("0.6 0.6 0.6 RG 1.5 w " + (marginLeft + indent - 8).toFixed(2) + " " + (y - lh).toFixed(2) + " m " + (marginLeft + indent - 8).toFixed(2) + " " + y.toFixed(2) + " l S");
+        drawLine(ln, x, base);
+        y -= lh;
+      });
+      y -= 4;
+    }
+
+    function drawTable(t) {
+      const colW = usableW / t.cols;
+      for (const row of t.rows) {
+        const cells = row.map((cellModel) => {
+          const lines = [];
+          for (const cp of cellModel) {
+            if (cp.type !== "p") continue;
+            const toks = tokenize(cp.runs || [], cp, 12);
+            const ls = wrapTokens(toks, colW - 10, 0);
+            (ls.length ? ls : [[]]).forEach((l) => lines.push(l));
+          }
+          return lines;
+        });
+        while (cells.length < t.cols) cells.push([]);
+        const heights = cells.map((ls) => ls.reduce((h, l) => h + lineSize(l) * 1.2 + 4, 0));
+        const rowH = Math.max(18, ...heights) + 6;
+        ensureSpace(rowH);
+        const top = y;
+        content.push("0.5 w 0.6 0.6 0.6 RG");
+        for (let ci = 0; ci <= t.cols; ci++) {
+          const x = marginLeft + ci * colW;
+          content.push(x.toFixed(2) + " " + top.toFixed(2) + " m " + x.toFixed(2) + " " + (top - rowH).toFixed(2) + " l S");
+        }
+        content.push(marginLeft + " " + top.toFixed(2) + " m " + (marginLeft + usableW) + " " + top.toFixed(2) + " l S");
+        content.push(marginLeft + " " + (top - rowH).toFixed(2) + " m " + (marginLeft + usableW) + " " + (top - rowH).toFixed(2) + " l S");
+        cells.forEach((ls, ci) => {
+          let ty = top - 4;
+          ls.forEach((l) => {
+            const size = lineSize(l);
+            drawLine(l, marginLeft + ci * colW + 5, ty - size);
+            ty -= size * 1.2 + 4;
+          });
+        });
+        y = top - rowH;
+      }
+      y -= 8;
+    }
+
+    for (const p of model) {
+      if (p.type === "hr") {
+        ensureSpace(14);
+        y -= 7;
+        content.push("0.6 0.6 0.6 RG 0.75 w " + marginLeft + " " + y.toFixed(2) + " m " + (marginLeft + usableW) + " " + y.toFixed(2) + " l S");
+        y -= 7;
+      } else if (p.type === "table") drawTable(p);
+      else drawParagraph(p);
+    }
+    pages.push({ content, annots });
+
+    // ---- assemble the file
+    const enc = new TextEncoder();
+    const N = pages.length;
+    const FONTS = [["Helvetica", "F1"], ["Helvetica-Bold", "F2"], ["Helvetica-Oblique", "F3"], ["Helvetica-BoldOblique", "F4"], ["Courier", "F5"], ["Courier-Bold", "F6"], ["Courier-Oblique", "F7"], ["Courier-BoldOblique", "F8"]];
+    const fontObj = (i) => 3 + N + i;                 // font objects follow the page objects
+    const contentObj = (i) => 3 + N + FONTS.length + i;
+    let nextObj = 3 + N + FONTS.length + N;           // annotation objects follow the content streams
+    const annotObjs = [];                             // { dict }
+    const pageAnnotRefs = pages.map((pg) => {
+      const refs = [];
+      pg.annots.forEach((a) => {
+        let action;
+        if (a.link.charAt(0) === "#") {
+          const dest = anchors.get(a.link.slice(1));
+          if (!dest) return;
+          action = "/Dest [" + (3 + dest.page) + " 0 R /XYZ 0 " + Math.min(pageH, dest.y + 8).toFixed(2) + " null]";
+        } else {
+          action = "/A << /S /URI /URI (" + pdfEscape(encodeURI(a.link)) + ") >>";
+        }
+        annotObjs.push("<< /Type /Annot /Subtype /Link /Rect [" + a.rect.map((n) => n.toFixed(2)).join(" ") + "] /Border [0 0 0] " + action + " >>");
+        refs.push(nextObj++ + " 0 R");
+      });
+      return refs;
+    });
+
+    const objs = [];                                  // { dict, stream? } in object-number order
+    objs.push({ dict: "<< /Type /Catalog /Pages 2 0 R >>" });
+    objs.push({ dict: "<< /Type /Pages /Kids [" + pages.map((_, i) => (3 + i) + " 0 R").join(" ") + "] /Count " + N + " >>" });
+    const fontRes = FONTS.map(([, nm], i) => "/" + nm + " " + fontObj(i) + " 0 R").join(" ");
+    pages.forEach((_, i) => {
+      const an = pageAnnotRefs[i].length ? " /Annots [" + pageAnnotRefs[i].join(" ") + "]" : "";
+      objs.push({ dict: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageW + " " + pageH + "] /Resources << /Font << " + fontRes + " >> >> /Contents " + contentObj(i) + " 0 R" + an + " >>" });
+    });
+    FONTS.forEach(([base]) => objs.push({ dict: "<< /Type /Font /Subtype /Type1 /BaseFont /" + base + " /Encoding /WinAnsiEncoding >>" }));
+    pages.forEach((pg) => objs.push({ stream: pdfBytes(pg.content.join("\n")) }));
+    annotObjs.forEach((d) => objs.push({ dict: d }));
+
+    const header = enc.encode("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+    const parts = [header];
+    const offsets = [];
+    let offset = header.length;
+    objs.forEach((o, i) => {
+      offsets.push(offset);
+      if (o.stream) {
+        const head = enc.encode((i + 1) + " 0 obj\n<< /Length " + o.stream.length + " >>\nstream\n");
+        const tail = enc.encode("\nendstream\nendobj\n");
+        parts.push(head, o.stream, tail);
+        offset += head.length + o.stream.length + tail.length;
+      } else {
+        const body = enc.encode((i + 1) + " 0 obj\n" + o.dict + "\nendobj\n");
+        parts.push(body);
+        offset += body.length;
+      }
+    });
+    const xref = enc.encode("xref\n0 " + (objs.length + 1) + "\n0000000000 65535 f \n" + offsets.map((o) => String(o).padStart(10, "0") + " 00000 n \n").join(""));
+    const trailer = enc.encode("trailer\n<< /Size " + (objs.length + 1) + " /Root 1 0 R >>\nstartxref\n" + offset + "\n%%EOF\n");
+    return new Blob([...parts, xref, trailer], { type: "application/pdf" });
+  }
+
   function doExportPdf() {
     if (!hasOpenDoc()) return;
-    const previous = document.title;
-    document.title = state.currentDoc.title || "document";
-    const restore = () => {
-      document.title = previous;
-      window.removeEventListener("afterprint", restore);
-    };
-    window.addEventListener("afterprint", restore);
-    showToast('Choose "Save as PDF" as the destination');
-    setTimeout(() => window.print(), 150);
+    try {
+      downloadBlob(buildPdf(), exportName("pdf"));
+      showToast("Exported as PDF");
+    } catch (e) {
+      showToast("PDF export failed");
+    }
   }
 
   // ---- Docly backup (.json): everything needed to restore the document
@@ -1791,14 +2288,33 @@ ${contentHtml()}
     const d = state.currentDoc;
     const data = {
       app: "docly",
+      version: 1,
       title: d.title || "",
       tags: d.tags || [],
       favorite: !!d.favorite,
       content: contentHtml(),
+      page: JSON.parse(LS.get("docly-page", "{}")),
       exportedAt: new Date().toISOString(),
     };
     downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), exportName("json"));
     showToast("Exported as backup (JSON)");
+  }
+
+  async function doImportJson(file) {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data || typeof data.content !== "string") { showToast("Invalid Docly JSON file"); return; }
+      const title = data.title || file.name.replace(/\.json$/i, "") || "Imported document";
+      const created = await api("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, type: "note" }) });
+      await api("/api/documents/" + encodeURIComponent(created.id), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: data.content, tags: data.tags || [] }) });
+      if (data.page && typeof data.page === "object") LS.set("docly-page", JSON.stringify(data.page));
+      showToast("Document imported");
+      await loadDocuments();
+      await openDocument(created.id);
+    } catch (e) {
+      showToast("Import failed: " + (e.message || "unknown error"));
+    }
   }
 
 
@@ -2885,18 +3401,259 @@ ${contentHtml()}
       } else if (/^https?:/i.test(href)) { window.open(href, "_blank", "noopener"); }
     }
   });
+  /* ---------------- Links and bookmarks (like Google Docs) ---------------- */
+  const LINK_SVG = {
+    link: '<svg viewBox="0 0 24 24"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>',
+    unlink: '<svg viewBox="0 0 24 24"><path d="M17 7h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1 0 1.43-.98 2.63-2.31 2.98l1.46 1.46C20.88 15.61 22 13.95 22 12c0-2.76-2.24-5-5-5zm-1 4h-2.19l2 2H16v-2zM2 4.27l3.11 3.11C3.29 8.12 2 9.91 2 12c0 2.76 2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1 0-1.59 1.21-2.9 2.76-3.07L8.73 11H8v2h2.73L13 15.27V17h1.73l4.01 4L20 19.74 3.27 3 2 4.27z"/></svg>',
+    copy: '<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>',
+    edit: '<svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
+    bookmark: '<svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>',
+    trash: '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>',
+    search: '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
+  };
+  const idSel = (id) => '[id="' + String(id).replace(/"/g, "") + '"]';
+  const linkTarget = (id) => richEditor.querySelector(idSel(id));
+  function targetLabel(id) {
+    const t = linkTarget(id);
+    if (!t) return null;
+    return (t.dataset && t.dataset.bookmark) || (t.textContent || "").trim() || id;
+  }
+  // everything a link can point to: headings (they get an id on demand) and bookmarks
+  function listLinkTargets() {
+    ensureHeadingIds();
+    const heads = Array.from(richEditor.querySelectorAll("h1,h2,h3,h4,h5,h6")).filter((x) => !x.closest(".toc"))
+      .map((x) => ({ id: x.id, label: x.textContent.trim() || "(empty heading)", kind: "heading" }));
+    const marks = Array.from(richEditor.querySelectorAll("a[data-bookmark]")).map((b) => ({ id: b.id, label: b.dataset.bookmark, kind: "bookmark" }));
+    return { heads, marks };
+  }
+
+  const TLDS = "com|org|net|edu|gov|io|dev|app|co|uk|it|de|fr|es|ch|eu|info|me|ai|tv|xyz|us|ca|nl|be|at|pt|ru|jp|cn|in|br|au|online|site|blog|tech|cloud|shop|store";
+  const BARE_DOMAIN_RE = new RegExp("^[a-z0-9-]+(\\.[a-z0-9-]+)*\\.(" + TLDS + ")(:\\d+)?([/?#]\\S*)?$", "i");
+  // Is this text a link? Returns the address to use, or null.
+  function urlFromText(t) {
+    t = (t || "").trim();
+    if (!t || /\s/.test(t)) return null;
+    if (/^(https?|ftp):\/\/\S+$/i.test(t) || /^mailto:\S+$/i.test(t)) return t;
+    if (/^www\.\S+\.\S+$/i.test(t)) return "https://" + t;
+    if (BARE_DOMAIN_RE.test(t)) return "https://" + t;
+    if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(t)) return "mailto:" + t;
+    if (/^#[\w-]+$/.test(t) && linkTarget(t.slice(1))) return t;     // a copied bookmark link
+    return null;
+  }
+  function normalizeHref(v) {
+    v = (v || "").trim();
+    if (!v) return "";
+    if (v.charAt(0) === "#" || /^[a-z][a-z0-9+.-]*:/i.test(v)) return v;
+    if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v)) return "mailto:" + v;
+    return "https://" + v;
+  }
+  function openHref(href) {
+    if (href.charAt(0) === "#") {
+      const t = linkTarget(href.slice(1));
+      if (t) t.scrollIntoView({ block: "center", behavior: "smooth" }); else showToast("That bookmark no longer exists");
+    } else if (/^mailto:/i.test(href)) window.location.href = href;
+    else window.open(href, "_blank", "noopener");
+  }
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); }
+    catch (_) {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+    }
+    showToast("Link copied");
+  }
+  const anchorAtCaret = () => { const n = activeElement(); return n && n.closest ? n.closest("a[href]") : null; };
+
+  // ---- the small card that appears when you click a link or a bookmark
+  const linkCard = document.createElement("div");
+  linkCard.className = "link-card hidden";
+  document.body.appendChild(linkCard);
+  let cardAnchor = null;
+  function hideLinkCard() { linkCard.classList.add("hidden"); cardAnchor = null; }
+  function placeCard(card, a) {
+    const r = a.getBoundingClientRect();
+    card.classList.remove("hidden");
+    const w = card.offsetWidth;
+    card.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+    card.style.top = Math.min(r.bottom + 6, window.innerHeight - card.offsetHeight - 8) + "px";
+  }
+  function showLinkCard(a) {
+    const href = a.getAttribute("href") || "";
+    const internal = href.charAt(0) === "#";
+    const label = internal ? (targetLabel(href.slice(1)) || href) : href;
+    linkCard.innerHTML = '<span class="lc-icon">' + (internal ? LINK_SVG.bookmark : LINK_SVG.link) + '</span>' +
+      '<a class="lc-url" href="#"></a>' +
+      '<button type="button" class="lc-btn" data-act="copy" title="Copy link">' + LINK_SVG.copy + '</button>' +
+      '<button type="button" class="lc-btn" data-act="edit" title="Edit link">' + LINK_SVG.edit + '</button>' +
+      '<button type="button" class="lc-btn" data-act="unlink" title="Remove link">' + LINK_SVG.unlink + '</button>';
+    const u = linkCard.querySelector(".lc-url");
+    u.textContent = label;
+    u.title = internal ? "Go to " + label : "Open " + href;
+    cardAnchor = a;
+    placeCard(linkCard, a);
+  }
+  function showBookmarkCard(a, isNew) {
+    linkCard.innerHTML = '<span class="lc-icon">' + LINK_SVG.bookmark + '</span><span class="lc-name"></span>' +
+      '<button type="button" class="lc-btn" data-act="copy-bm" title="Copy link to this bookmark">' + LINK_SVG.copy + '</button>' +
+      '<button type="button" class="lc-btn" data-act="rename-bm" title="Rename bookmark">' + LINK_SVG.edit + '</button>' +
+      '<button type="button" class="lc-btn" data-act="remove-bm" title="Remove bookmark">' + LINK_SVG.trash + '</button>';
+    linkCard.querySelector(".lc-name").textContent = (a.dataset.bookmark || "Bookmark") + (isNew ? "  \u2022  added" : "");
+    cardAnchor = a;
+    placeCard(linkCard, a);
+  }
+  linkCard.addEventListener("mousedown", (e) => e.preventDefault());
+  linkCard.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const a = cardAnchor;
+    if (!a) return;
+    const urlEl = e.target.closest(".lc-url");
+    const btn = e.target.closest("[data-act]");
+    if (urlEl) { openHref(a.getAttribute("href") || ""); return; }
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === "copy") copyText(a.getAttribute("href") || "");
+    else if (act === "copy-bm") copyText("#" + a.id);
+    else if (act === "edit") { hideLinkCard(); openLinkEditor(a); }
+    else if (act === "unlink") {
+      const r = document.createRange(); r.selectNodeContents(a);
+      const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      focusRich(); document.execCommand("unlink");
+      hideLinkCard(); scheduleSave(); syncToolbar();
+    } else if (act === "rename-bm") {
+      hideLinkCard();
+      const name = await showModal("Rename bookmark", "Bookmark name:", a.dataset.bookmark || "", true);
+      if (name && name.trim()) { a.dataset.bookmark = name.trim(); a.title = "Bookmark: " + name.trim(); scheduleSave(); }
+    } else if (act === "remove-bm") { a.remove(); hideLinkCard(); scheduleSave(); showToast("Bookmark removed"); }
+  });
+  document.addEventListener("mousedown", (e) => {
+    if (!linkCard.contains(e.target) && !(e.target.closest && e.target.closest("a") && richEditor.contains(e.target))) hideLinkCard();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideLinkCard(); });
+  richEditor.addEventListener("input", hideLinkCard);
+  document.querySelector(".page-scroll").addEventListener("scroll", hideLinkCard, { passive: true });
+  richEditor.addEventListener("click", (e) => {
+    if (e.ctrlKey || e.metaKey) return;                         // Ctrl+click opens the link directly (handled above)
+    const a = e.target.closest && e.target.closest("a");
+    if (!a || !richEditor.contains(a) || a.closest(".toc")) { hideLinkCard(); return; }
+    if (a.hasAttribute("data-bookmark")) showBookmarkCard(a);
+    else if (a.hasAttribute("href")) showLinkCard(a);
+  });
+
+  // ---- Insert link: text + link fields, with "Headings and bookmarks" suggestions
+  let linkEditorEl = null;
+  function closeLinkEditor() {
+    if (linkEditorEl) { linkEditorEl.remove(); linkEditorEl = null; }
+    document.removeEventListener("mousedown", linkEditorOutside, true);
+  }
+  function linkEditorOutside(e) { if (linkEditorEl && !linkEditorEl.contains(e.target)) closeLinkEditor(); }
+
+  function openLinkEditor(existing, opts) {
+    if (!needOpenDoc()) return;
+    hideLinkCard(); closeLinkEditor();
+    let range = null;
+    if (existing) { range = document.createRange(); range.selectNodeContents(existing); }
+    else { const r = selectionInEditor() || savedRange; range = r ? r.cloneRange() : null; }
+    const selText = existing ? existing.textContent : (range ? range.toString() : "");
+    const hadSelection = !!selText && !(range && range.collapsed);
+
+    const box = document.createElement("div");
+    box.className = "link-editor";
+    box.innerHTML = '<label>Text</label><input class="le-text" placeholder="Text to display" autocomplete="off" spellcheck="false">' +
+      '<label>Link</label><div class="le-linkwrap"><span class="le-ic">' + LINK_SVG.search + '</span><input class="le-url" placeholder="Paste a link or search headings and bookmarks" autocomplete="off" spellcheck="false"></div>' +
+      '<div class="le-suggest"></div>' +
+      '<div class="le-actions">' + (existing ? '<button type="button" class="le-remove">Remove link</button>' : '') + '<span class="le-grow"></span><button type="button" class="le-cancel">Cancel</button><button type="button" class="le-apply">Apply</button></div>';
+    const textIn = box.querySelector(".le-text"), urlIn = box.querySelector(".le-url"), sug = box.querySelector(".le-suggest");
+    textIn.value = selText;
+    if (existing) {
+      const href = existing.getAttribute("href") || "";
+      if (href.charAt(0) === "#") { urlIn.value = targetLabel(href.slice(1)) || href; urlIn.dataset.href = href; } else urlIn.value = href;
+    }
+    let autoText = !selText;             // the text follows the chosen heading / bookmark until you type your own
+
+    function drawSuggestions() {
+      const q = urlIn.value.trim().toLowerCase();
+      sug.innerHTML = "";
+      if (urlIn.dataset.href || (q && urlFromText(urlIn.value) && q.charAt(0) !== "#") || /^(https?:|mailto:|www\.)/i.test(q)) { sug.classList.remove("open"); return; }
+      const { heads, marks } = listLinkTargets();
+      const match = (t) => !q || t.label.toLowerCase().includes(q);
+      const groups = [["Headings", heads.filter(match)], ["Bookmarks", marks.filter(match)]].filter((g) => g[1].length);
+      if (!groups.length) { sug.classList.remove("open"); return; }
+      groups.forEach(([title, items]) => {
+        const t = document.createElement("div"); t.className = "le-group"; t.textContent = title; sug.appendChild(t);
+        items.slice(0, 8).forEach((it) => {
+          const row = document.createElement("button");
+          row.type = "button"; row.className = "le-item";
+          row.innerHTML = '<span class="le-item-ic">' + (it.kind === "bookmark" ? LINK_SVG.bookmark : "<b>H</b>") + '</span><span class="le-item-label"></span>';
+          row.querySelector(".le-item-label").textContent = it.label;
+          row.addEventListener("mousedown", (ev) => ev.preventDefault());
+          row.addEventListener("click", () => {
+            urlIn.value = it.label; urlIn.dataset.href = "#" + it.id;
+            if (autoText || !textIn.value.trim()) { textIn.value = it.label; autoText = true; }
+            sug.classList.remove("open");
+            urlIn.focus();
+          });
+          sug.appendChild(row);
+        });
+      });
+      sug.classList.add("open");
+    }
+    urlIn.addEventListener("input", () => { delete urlIn.dataset.href; drawSuggestions(); });
+    urlIn.addEventListener("focus", drawSuggestions);
+    textIn.addEventListener("input", () => { autoText = false; });
+
+    function finish() {
+      const href = urlIn.dataset.href || normalizeHref(urlIn.value);
+      const text = textIn.value;
+      closeLinkEditor();
+      if (!href) { if (existing) { const r = document.createRange(); r.selectNodeContents(existing); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); focusRich(); document.execCommand("unlink"); scheduleSave(); } return; }
+      focusRich();
+      const sel = window.getSelection();
+      if (existing) {
+        existing.setAttribute("href", href);
+        if (text.trim() && text !== existing.textContent) existing.textContent = text;
+        const r = document.createRange(); r.setStartAfter(existing); r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
+      } else {
+        if (range) { sel.removeAllRanges(); sel.addRange(range); }
+        if (hadSelection && (!text.trim() || text === selText)) {
+          document.execCommand("createLink", false, href);
+          sel.collapseToEnd();
+        } else {
+          const label = text.trim() || (href.charAt(0) === "#" ? (targetLabel(href.slice(1)) || href) : href);
+          document.execCommand("insertHTML", false, '<a href="' + escapeHtml(href) + '">' + escapeHtml(label) + "</a>" + (hadSelection ? "" : "&nbsp;"));
+        }
+      }
+      scheduleSave(); syncToolbar();
+    }
+    box.querySelector(".le-apply").onclick = finish;
+    box.querySelector(".le-cancel").onclick = () => { closeLinkEditor(); focusRich(); };
+    const rm = box.querySelector(".le-remove");
+    if (rm) rm.onclick = () => { urlIn.value = ""; delete urlIn.dataset.href; finish(); };
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeLinkEditor(); focusRich(); }
+    });
+
+    document.body.appendChild(box);
+    linkEditorEl = box;
+    // position under the selected text (or the caret)
+    let rect = range ? range.getBoundingClientRect() : null;
+    if (!rect || (!rect.width && !rect.height && !rect.top)) { const pr = pageArea.getBoundingClientRect(); rect = { left: pr.left + 40, bottom: pr.top + 80 }; }
+    box.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - box.offsetWidth - 8)) + "px";
+    box.style.top = Math.min(rect.bottom + 8, window.innerHeight - box.offsetHeight - 8) + "px";
+    setTimeout(() => document.addEventListener("mousedown", linkEditorOutside, true), 0);
+    (hadSelection || existing || (opts && opts.suggest) ? urlIn : textIn).focus();
+    if (existing) urlIn.select();
+    if (opts && opts.suggest) drawSuggestions();
+  }
   async function insertLink() {
     if (!needOpenDoc()) return;
-    const url = await showModal("Insert link", "Enter link URL:", "https://", true);
-    if (!url) return;
-    focusRich(); restoreSelection();
-    const r = selectionInEditor();
-    if (r && r.collapsed) document.execCommand("insertHTML", false, '<a href="' + escapeHtml(url) + '">' + escapeHtml(url) + "</a>&nbsp;");
-    else document.execCommand("createLink", false, url);
-    scheduleSave();
+    openLinkEditor(anchorAtCaret());
   }
   el("linkBtn").addEventListener("click", insertLink);
 
+  // ---- Bookmarks: a small marker you can link to (Insert > Bookmark)
   function slug(t) { return (t || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "section"; }
   function ensureHeadingIds() {
     const used = new Set();
@@ -2906,32 +3663,78 @@ ${contentHtml()}
       used.add(id); h.id = id;
     });
   }
-  async function insertBookmark() {
+  function insertBookmark() {
     if (!needOpenDoc()) return;
-    const name = await showModal("Insert bookmark", "Bookmark name:", "", true);
-    if (!name || !name.trim()) return;
-    const id = "bm-" + slug(name);
+    const names = new Set(Array.from(richEditor.querySelectorAll("a[data-bookmark]")).map((b) => b.dataset.bookmark));
+    let n = 1; while (names.has("Bookmark " + n)) n++;
+    const name = "Bookmark " + n;
+    let id = "bm-" + slug(name), k = 2;
+    while (richEditor.querySelector(idSel(id))) id = "bm-" + slug(name) + "-" + k++;
     focusRich(); restoreSelection();
-    document.execCommand("insertHTML", false, '<a id="' + id + '" data-bookmark="' + escapeHtml(name.trim()) + '"></a>');
-    scheduleSave(); showToast("Bookmark added");
+    // inserted directly at the caret: the browser's insertHTML would split the paragraph around a non-editable marker
+    const sel = window.getSelection();
+    let r = sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (!r || !richEditor.contains(r.startContainer)) { r = document.createRange(); r.selectNodeContents(richEditor); r.collapse(false); }
+    r.collapse(false);
+    const mark = document.createElement("a");
+    mark.id = id; mark.dataset.bookmark = name; mark.title = "Bookmark: " + name;
+    mark.setAttribute("contenteditable", "false");
+    mark.textContent = "\u200b";
+    const tail = document.createTextNode("\u200b");        // keeps a caret position after the marker
+    r.insertNode(tail); r.insertNode(mark);
+    const after = document.createRange(); after.setStart(tail, 1); after.collapse(true);
+    sel.removeAllRanges(); sel.addRange(after);
+    scheduleSave();
+    const a = richEditor.querySelector(idSel(id));
+    if (a) showBookmarkCard(a, true);
   }
-  async function insertInternalLink() {
+  function insertInternalLink() {
     if (!needOpenDoc()) return;
-    ensureHeadingIds();
-    const targets = [];
-    richEditor.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach((h) => targets.push([h.id, "Heading: " + (h.textContent.trim() || "(empty)")]));
-    richEditor.querySelectorAll("a[data-bookmark]").forEach((b) => targets.push([b.id, "Bookmark: " + b.dataset.bookmark]));
-    if (!targets.length) { showToast("Add a heading or a bookmark first"); return; }
-    const res = await formDialog("Link to heading or bookmark", [{ key: "t", label: "Target", type: "select", value: targets[0][0], options: targets }], "Insert link");
-    if (!res) return;
-    focusRich(); restoreSelection();
+    const t = listLinkTargets();
+    if (!t.heads.length && !t.marks.length) { showToast("Add a heading or a bookmark first"); return; }
+    openLinkEditor(anchorAtCaret(), { suggest: true });
+  }
+
+  // ---- Pasting or typing a web address turns it into a link
+  function pasteAsLink(text, href) {
     const r = selectionInEditor();
-    if (r && r.collapsed) {
-      const label = (targets.find((t) => t[0] === res.t) || [0, "link"])[1].replace(/^[^:]+: /, "");
-      document.execCommand("insertHTML", false, '<a href="#' + res.t + '">' + escapeHtml(label) + "</a>&nbsp;");
-    } else document.execCommand("createLink", false, "#" + res.t);
+    if (r && !r.collapsed) { document.execCommand("createLink", false, href); window.getSelection().collapseToEnd(); }
+    else {
+      const label = href.charAt(0) === "#" ? (targetLabel(href.slice(1)) || text) : text;
+      document.execCommand("insertHTML", false, '<a href="' + escapeHtml(href) + '">' + escapeHtml(label) + "</a>&nbsp;");
+    }
+    scheduleSave(); syncToolbar();
+  }
+  function autoLinkBeforeCaret() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+    const r = sel.getRangeAt(0), node = r.startContainer;
+    if (node.nodeType !== 3 || !richEditor.contains(node) || (node.parentElement && node.parentElement.closest("a"))) return;
+    const upto = node.nodeValue.slice(0, r.startOffset);
+    const m = upto.match(/(\S+)$/);
+    if (!m) return;
+    const tok = m[1].replace(/\u00a0/g, " ").replace(/[.,;:!?)\]}'"\u00bb]+$/, "");
+    const href = urlFromText(tok);
+    if (!href || href.charAt(0) === "#") return;
+    const start = upto.length - m[1].length;
+    const rg = document.createRange();
+    rg.setStart(node, start); rg.setEnd(node, start + tok.length);
+    sel.removeAllRanges(); sel.addRange(rg);
+    document.execCommand("createLink", false, href);
+    const a = anchorAtCaret();
+    const after = document.createRange();
+    const tail = m[1].length - tok.length;
+    if (a && a.nextSibling && a.nextSibling.nodeType === 3 && tail) after.setStart(a.nextSibling, Math.min(tail, a.nextSibling.length));
+    else if (a) after.setStartAfter(a);
+    else return;
+    after.collapse(true);
+    sel.removeAllRanges(); sel.addRange(after);
     scheduleSave();
   }
+  richEditor.addEventListener("keydown", (e) => {
+    if ((e.key === " " || e.key === "Enter") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && state.currentDoc && isEditing()) autoLinkBeforeCaret();
+  });
+
   function buildToc() {
     ensureHeadingIds();
     const hs = Array.from(richEditor.querySelectorAll("h1,h2,h3,h4,h5,h6")).filter((h) => !h.closest(".toc"));
@@ -3061,6 +3864,39 @@ ${contentHtml()}
     scheduleSave();
   }
 
+  function toggleSmallCaps() {
+    if (!needOpenDoc()) return;
+    focusRich(); restoreSelection();
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (range.collapsed) { showToast("Select some text first"); return; }
+    let cur = range.commonAncestorContainer;
+    if (cur.nodeType !== 1) cur = cur.parentElement;
+    let scSpan = null;
+    while (cur && cur !== richEditor) {
+      if (cur.nodeType === 1 && cur.style && cur.style.fontVariant === "small-caps") { scSpan = cur; break; }
+      cur = cur.parentElement;
+    }
+    if (scSpan) {
+      const parent = scSpan.parentNode;
+      while (scSpan.firstChild) parent.insertBefore(scSpan.firstChild, scSpan);
+      parent.removeChild(scSpan);
+    } else {
+      try {
+        const span = document.createElement("span");
+        span.style.fontVariant = "small-caps";
+        span.appendChild(range.extractContents());
+        range.insertNode(span);
+        range.selectNodeContents(span);
+        sel.removeAllRanges(); sel.addRange(range);
+      } catch (_) {
+        document.execCommand("insertHTML", false, '<span style="font-variant:small-caps">' + range.toString() + "</span>");
+      }
+    }
+    scheduleSave();
+  }
+
   /* ---------------- Clipboard (menu versions) ---------------- */
   async function pasteFromClipboard(plain) {
     if (!needOpenDoc()) return;
@@ -3085,6 +3921,9 @@ ${contentHtml()}
   richEditor.addEventListener("paste", (e) => {
     const cd = e.clipboardData;
     if (!cd) return;
+    const plainTxt = (cd.getData("text/plain") || "").trim();
+    const pastedHref = urlFromText(plainTxt);
+    if (pastedHref && !(activeElement() && activeElement().closest && activeElement().closest("a"))) { e.preventDefault(); pasteAsLink(plainTxt, pastedHref); return; }
     const html = cd.getData("text/html");
     if (html && /<img|<picture|<svg/i.test(html)) {
       e.preventDefault();
@@ -3096,6 +3935,150 @@ ${contentHtml()}
   });
   richEditor.addEventListener("drop", (e) => {
     if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); showToast("Images are not supported"); }
+  });
+
+  /* ---------------- Automatic lists: "1)", "1." or "-" start a list (like Google Docs) ---------------- */
+  const LIST_MARKER_RE = /^(?:(\d{1,3})[.)]|[-*\u2022])$/;
+  let autoListUndo = null;   // set right after a list was auto-created, so one Backspace can take it back
+
+  // Text typed straight into the page (outside any paragraph) confuses the browser's list commands:
+  // give every run of such loose text its own <div>, keeping the caret where it was.
+  function wrapRootInline() {
+    const sel = window.getSelection();
+    const saved = sel && sel.rangeCount ? (() => { const r = sel.getRangeAt(0); return [r.startContainer, r.startOffset, r.endContainer, r.endOffset]; })() : null;
+    const isBlockish = (n) => n.nodeType === 1 && (BLOCK_RE.test(n.tagName) || /^(UL|OL|TABLE|HR)$/.test(n.tagName));
+    let run = [];
+    const flush = () => {
+      if (run.length && !run.every((n) => n.nodeType === 3 && !n.nodeValue.trim())) {
+        const d = document.createElement("div");
+        run[0].parentNode.insertBefore(d, run[0]);
+        run.forEach((n) => d.appendChild(n));
+      }
+      run = [];
+    };
+    Array.from(richEditor.childNodes).forEach((n) => { if (isBlockish(n)) flush(); else run.push(n); });
+    flush();
+    if (saved) {
+      try { const r = document.createRange(); r.setStart(saved[0], saved[1]); r.setEnd(saved[2], saved[3]); sel.removeAllRanges(); sel.addRange(r); } catch (_) {}
+    }
+  }
+
+  function autoListBlock(range) {
+    let b = blockOf(range.startContainer);
+    if (!b) {                                   // text typed straight into the page: give it a paragraph first
+      document.execCommand("formatBlock", false, "P");
+      const r = window.getSelection().rangeCount ? window.getSelection().getRangeAt(0) : null;
+      b = r ? blockOf(r.startContainer) : null;
+    }
+    return b;
+  }
+  const autoListEligible = (b) => b && !b.closest("li, pre, table, .toc, h1, h2, h3, h4, h5, h6, blockquote");
+
+  function startListIn(block, ordered, startAt) {
+    // an empty paragraph needs a <br> (and no stray empty text node), or Chrome applies the list to the wrong line
+    if (!block.textContent && !block.querySelector("br")) {
+      block.textContent = "";
+      block.appendChild(document.createElement("br"));
+    }
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.setStart(block, 0); r.collapse(true);
+    sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand(ordered ? "insertOrderedList" : "insertUnorderedList");
+    const n = activeElement();
+    const li = n && n.closest ? n.closest("li") : null;
+    if (ordered && li && li.parentNode && startAt && startAt !== 1) li.parentNode.setAttribute("start", String(startAt));
+    return li;
+  }
+
+  richEditor.addEventListener("keydown", (e) => {
+    if (!state.currentDoc || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+    if (!isEditing()) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !selectionInEditor()) return;
+    const range = sel.getRangeAt(0);
+
+    // --- Backspace right after an automatic list: remove the list, keep the typed marker ("1)")
+    if (e.key === "Backspace" && autoListUndo && sel.isCollapsed) {
+      const n = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
+      const li = n && n.closest ? n.closest("li") : null;
+      if (li && li === autoListUndo.li && !li.textContent.replace(/\u200b/g, "").trim()) {
+        e.preventDefault();
+        const ordered = li.parentNode.tagName === "OL";
+        const marker = autoListUndo.marker;
+        autoListUndo = null;
+        document.execCommand(ordered ? "insertOrderedList" : "insertUnorderedList");   // toggles the list off
+        document.execCommand("insertText", false, marker);
+        scheduleSave();
+        return;
+      }
+    }
+    if (e.key !== "Enter" && e.key !== " " && e.key !== "Backspace" && e.key.length === 1) autoListUndo = null;
+    if (!sel.isCollapsed) return;
+
+    // --- Space after "1." / "1)" / "-" at the start of a paragraph
+    if (e.key === " ") {
+      const b0 = blockOf(range.startContainer);
+      if (b0 && !autoListEligible(b0)) return;
+      const probe = b0 || richEditor;
+      const pre = document.createRange();
+      pre.selectNodeContents(probe); pre.setEnd(range.endContainer, range.endOffset);
+      const before = pre.toString().replace(/\u00a0/g, " ");
+      if (!LIST_MARKER_RE.test(before)) return;
+      wrapRootInline();
+      const block = autoListBlock(window.getSelection().getRangeAt(0));
+      if (!autoListEligible(block)) return;
+      e.preventDefault();
+      const m = before.match(/^(\d{1,3})[.)]$/);
+      const cur = window.getSelection().getRangeAt(0);
+      const del = document.createRange();
+      del.selectNodeContents(block); del.setEnd(cur.endContainer, cur.endOffset);
+      del.deleteContents();
+      const li = startListIn(block, !!m, m ? parseInt(m[1], 10) : 1);
+      autoListUndo = li ? { li, marker: before + " " } : null;
+      scheduleSave(); syncToolbar();
+      return;
+    }
+
+    // --- Enter on a line that starts with a list marker
+    if (e.key === "Enter" && !e.shiftKey) {
+      const b0 = blockOf(range.startContainer);
+      if (b0 && !autoListEligible(b0)) return;
+      const probe = b0 || richEditor;
+      const whole = (probe.textContent || "").replace(/\u00a0/g, " ").replace(/\u200b/g, "");
+      const after = document.createRange();
+      after.selectNodeContents(probe); after.setStart(range.endContainer, range.endOffset);
+      if (after.toString().trim()) return;                       // only when the caret is at the end of the line
+      const only = whole.trim().match(LIST_MARKER_RE);          // just the marker:  "1)"  ->  list starts, stays empty
+      const withText = whole.match(/^\s*(?:(\d{1,3})[.)]|[-*\u2022])\s+(\S[\s\S]*)$/);
+      if (!only && !withText) return;
+      wrapRootInline();
+      const block = autoListBlock(window.getSelection().getRangeAt(0));
+      if (!autoListEligible(block)) return;
+      e.preventDefault();
+      const marker = (only ? whole.trim() : whole.match(/^\s*(\d{1,3}[.)]|[-*\u2022])/)[1]);
+      const num = (marker.match(/^(\d{1,3})/) || [])[1];
+      // drop the marker (and the space after it) from the text
+      const first = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+      let strip = marker.length + (only ? 0 : (whole.match(/^\s*\S+(\s+)/) || [0, ""])[1].length);
+      let lead = (whole.match(/^\s*/) || [""])[0].length;
+      strip += lead;
+      while (strip > 0 && first.nextNode()) {
+        const t = first.currentNode, take = Math.min(strip, t.nodeValue.length);
+        t.nodeValue = t.nodeValue.slice(take); strip -= take;
+      }
+      const li = startListIn(block, !!num, num ? parseInt(num, 10) : 1);
+      if (only) {
+        autoListUndo = li ? { li, marker } : null;              // caret stays in the new, empty item
+      } else {
+        const s2 = window.getSelection(), r2 = document.createRange();
+        r2.selectNodeContents(li || block); r2.collapse(false);
+        s2.removeAllRanges(); s2.addRange(r2);
+        document.execCommand("insertParagraph");                // text stays in item 1, caret moves to a new item
+        autoListUndo = null;
+      }
+      scheduleSave(); syncToolbar();
+    }
   });
 
   /* ---------------- Find / replace (next / previous) ---------------- */
@@ -3196,6 +4179,16 @@ ${contentHtml()}
       "\nWords: " + words + "\nCharacters: " + text.replace(/\n/g, "").length + "\nTables: " + richEditor.querySelectorAll("table").length +
       "\nTags: " + ((d.tags || []).join(", ") || "—"), "", false);
   }
+  async function showFilePath() {
+    if (!needOpenDoc()) return;
+    try {
+      const res = await api("/api/documents/" + encodeURIComponent(state.currentId) + "/path");
+      const p = (res && res.path) || "";
+      showModal("File path", "The current document is saved at:\n\n" + p, "", false);
+    } catch (e) {
+      showToast("Could not read file path");
+    }
+  }
   async function showPageSetup() {
     if (!needOpenDoc()) return;
     const m = rulerMetrics();
@@ -3232,13 +4225,25 @@ ${contentHtml()}
     if (cur.orient === "landscape") [w, h] = [h, w];
     return { w: Math.round(w * 1440), h: Math.round(h * 1440) };
   };
+  function pageOrient() {
+    const cur = JSON.parse(LS.get("docly-page", "{}"));
+    return cur.orient || "portrait";
+  }
+  function setPageOrientation(orient) {
+    if (!needOpenDoc()) return;
+    const cur = JSON.parse(LS.get("docly-page", "{}"));
+    cur.orient = orient;
+    LS.set("docly-page", JSON.stringify(cur));
+    applyPage(); rafRender(); mmRefresh();
+    showToast("Page orientation: " + orient);
+  }
 
   /* =====================================================================
      MINIMAP (View > Minimap, like VS Code)
      ===================================================================== */
   const minimap = el("minimap"), mmInner = el("mmInner"), mmPage = el("mmPage"), mmSlider = el("mmSlider");
   const MM_W = 120;
-  let mmTimer = null, mmOn = LS.get("docly-minimap", "1") === "1";
+  let mmTimer = null, mmOn = LS.get("docly-minimap", "0") === "1";
   const minimapVisible = () => mmOn;
   function mmRefresh() {
     if (!mmOn || !state.currentDoc) { minimap.classList.add("hidden"); return; }
@@ -3312,15 +4317,17 @@ ${contentHtml()}
      ===================================================================== */
   const helpMenu = el("helpMenu"), helpOverlay = el("helpOverlay"), helpTitle = el("helpTitle"), helpBody = el("helpBody");
   function closeHelpMenu() { helpMenu.classList.add("hidden"); }
-  function openHelpMenu() {
+  function openHelpMenu(anchor) {
     closeMenu(); closeHelpMenu();
-    let r = helpBtn.getBoundingClientRect();
-    if (!helpBtn.offsetParent || !r.width) { const b = menuBar.querySelector('[data-menu="help"]'); r = b.getBoundingClientRect(); }
+    let r = (anchor || helpBtn).getBoundingClientRect();
+    if (!r.width) { const b = menuBar.querySelector('[data-menu="help"]'); if (b) r = b.getBoundingClientRect(); }
     placeFloating(helpMenu, r.left - 170 + r.width, r.bottom + 6);
     const f = helpMenu.querySelector("button"); if (f) f.focus();
   }
   helpBtn.addEventListener("click", (e) => { e.stopPropagation(); if (helpMenu.classList.contains("hidden")) openHelpMenu(); else closeHelpMenu(); });
-  document.addEventListener("mousedown", (e) => { if (!helpMenu.contains(e.target) && !helpBtn.contains(e.target)) closeHelpMenu(); });
+  const homeHelpBtn = el("homeHelpBtn");
+  homeHelpBtn.addEventListener("click", (e) => { e.stopPropagation(); if (helpMenu.classList.contains("hidden")) openHelpMenu(homeHelpBtn); else closeHelpMenu(); });
+  document.addEventListener("mousedown", (e) => { if (!helpMenu.contains(e.target) && !helpBtn.contains(e.target) && !homeHelpBtn.contains(e.target)) closeHelpMenu(); });
   helpMenu.addEventListener("click", (e) => { const b = e.target.closest("[data-help]"); if (b) { closeHelpMenu(); openHelpSection(b.dataset.help); } });
   helpMenu.addEventListener("keydown", (e) => {
     const items = Array.from(helpMenu.querySelectorAll("button")), i = items.indexOf(document.activeElement);
@@ -3449,6 +4456,7 @@ SOFTWARE.`;
       const map = { KeyF: "file", KeyE: "edit", KeyV: "view", KeyI: "insert", KeyO: "format", KeyT: "tools", KeyH: "help", KeyB: "table" };
       if (map[code] && ready) { stop(); const b = menuBar.querySelector('[data-menu="' + map[code] + '"]'); if (b) openMenu(b); return; }
       if (code === "Digit5" && inEd) { edit(() => { document.execCommand("strikeThrough"); scheduleSave(); syncToolbar(); }); return; }
+      if (code === "KeyK" && inEd) { edit(() => toggleSmallCaps()); return; }
     }
 
     // ---- Tab in tables / indent
@@ -3573,7 +4581,6 @@ SOFTWARE.`;
       { label: "All documents (home)", run: () => goHome() },
       { label: "Make a copy", run: makeCopy },
       "-",
-      { label: "Email a copy", run: emailCopy },
       { label: "Download", sub: [
         { label: "Microsoft Word (.docx)", run: doExportDocx },
         { label: "OpenDocument Format (.odt)", run: doExportOdt },
@@ -3590,6 +4597,7 @@ SOFTWARE.`;
       { label: "Save", key: "Ctrl+S", run: needDoc(() => { doSave(true); showToast("Document saved"); }) },
       { label: "Rename", run: renameDoc },
       { label: "Add / remove favorite", run: needDoc(() => favBtn.click()) },
+      { label: "Tags…", run: openTagsDialog },
       { label: "Move to trash", run: needDoc(() => deleteBtn.click()) },
       "-",
       { label: "Language", sub: langs.map(([c, n]) => ({ label: n, check: () => richEditor.lang === c, run: () => setLanguage(c, n) })) },
@@ -3598,6 +4606,7 @@ SOFTWARE.`;
       "-",
       { label: "Document details", run: showDocDetails },
       { label: "Word count", key: "Ctrl+Shift+C", run: needDoc(showWordCount) },
+      { label: "Show file path", run: showFilePath },
     ],
     edit: [
       { label: "Undo", key: "Ctrl+Z", run: clickId("undoBtn") },
@@ -3649,6 +4658,7 @@ SOFTWARE.`;
       { label: "Link", key: "Ctrl+K", run: insertLink },
       { label: "Horizontal line", run: clickId("hrBtn") },
       { label: "Code block", run: clickId("codeBtn") },
+      { label: "Checklist", key: "Ctrl+Shift+9", run: toggleChecklist },
       "-",
       { label: "Page break", key: "Ctrl+Enter", run: needDoc(insertPageBreak) },
       { label: "Date and time", sub: [
@@ -3670,8 +4680,19 @@ SOFTWARE.`;
         { label: "Italic", key: "Ctrl+I", run: sc("italic") },
         { label: "Underline", key: "Ctrl+U", run: sc("underline") },
         { label: "Strikethrough", key: "Alt+Shift+5", run: sc("strikeThrough") },
+        { label: "Small caps", key: "Alt+Shift+K", run: toggleSmallCaps },
         { label: "Superscript", key: "Ctrl+.", run: sc("superscript") },
         { label: "Subscript", key: "Ctrl+,", run: sc("subscript") },
+        "-",
+        { label: "Size", sub: [
+          { label: "Increase font size", key: "Ctrl+Shift+.", run: needDoc(() => stepFontSize(1)) },
+          { label: "Decrease font size", key: "Ctrl+Shift+,", run: needDoc(() => stepFontSize(-1)) },
+        ] },
+        { label: "Capitalization", sub: [
+          { label: "lowercase", run: () => caseTo("lower") },
+          { label: "UPPERCASE", run: () => caseTo("upper") },
+          { label: "Title Case", run: () => caseTo("title") },
+        ] },
         "-",
         { label: "Text color", run: clickId("textColorBtn") },
         { label: "Highlight color", run: clickId("highlightBtn") },
@@ -3685,6 +4706,10 @@ SOFTWARE.`;
         { label: "lowercase", run: () => caseTo("lower") },
         { label: "UPPERCASE", run: () => caseTo("upper") },
         { label: "Title Case", run: () => caseTo("title") },
+      ] },
+      { label: "Page orientation", sub: [
+        { label: "Portrait", check: () => pageOrient() === "portrait", run: () => setPageOrientation("portrait") },
+        { label: "Landscape", check: () => pageOrient() === "landscape", run: () => setPageOrientation("landscape") },
       ] },
       "-",
       { label: "Paragraph styles", sub: [
