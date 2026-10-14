@@ -10,6 +10,10 @@
     saveTimer: null,
     searchTimer: null,
     dirty: false,
+    collection: "",            // active collection filter ("" = all)
+    selected: new Set(),       // ids selected on the home page
+    allDocs: [],               // every document (the list can be narrowed by a search)
+    extraCollections: [],      // collections created but still empty
   };
   const el = (id) => document.getElementById(id);
   const docList = el("docList");
@@ -114,16 +118,19 @@
         }
       };
       
+      const handleEnter = (e) => { if (e.key === "Enter" && showInput) { e.preventDefault(); handleOk(); } };
       modalOk.onclick = handleOk;
       modalCancel.onclick = handleCancel;
       modalOverlay.onclick = handleOverlayClick;
       document.addEventListener("keydown", handleEscape);
+      modalInput.addEventListener("keydown", handleEnter);
       
       modal._cleanup = () => {
         modalOk.onclick = null;
         modalCancel.onclick = null;
         modalOverlay.onclick = null;
         document.removeEventListener("keydown", handleEscape);
+        modalInput.removeEventListener("keydown", handleEnter);
       };
     });
   }
@@ -188,6 +195,8 @@
   async function loadDocuments() {
     const data = await api("/api/documents");
     state.documents = data.documents || [];
+    state.allDocs = state.documents;
+    state.extraCollections = data.collections || [];
     renderList();
   }
 
@@ -213,6 +222,7 @@
       default:
         break;
     }
+    if (state.collection) docs = docs.filter((d) => d.collection === state.collection);
     return docs;
   }
 
@@ -227,8 +237,12 @@
   }
 
   function renderList() {
+    const ids = new Set(state.allDocs.map((d) => d.id));
+    state.selected.forEach((id) => { if (!ids.has(id)) state.selected.delete(id); });
+    if (state.collection && !allCollections().some(([n]) => n === state.collection)) state.collection = "";
     renderSidebarList();
     renderHome();
+    renderCollections();
   }
 
   function renderSidebarList() {
@@ -250,7 +264,7 @@
       const item = document.createElement("div");
       item.className = "doc-item" + (doc.id === state.currentId ? " active" : "") + (doc.id === state.justCreated ? " doc-item-new" : "");
       item.dataset.id = doc.id;
-      item.title = doc.title || "Untitled";
+      item.dataset.fullname = doc.title || "Untitled";
 
       const title = document.createElement("span");
       title.className = "doc-item-title";
@@ -281,6 +295,16 @@
         deleteDocument(doc.id, doc.title);
       });
 
+      const folderBtn = document.createElement("button");
+      folderBtn.className = "row-icon-btn folder-btn" + (doc.collection ? " active" : "");
+      folderBtn.title = doc.collection ? `In folder "${doc.collection}" - click to change or take out` : "Move to a folder";
+      folderBtn.textContent = doc.collection ? "📂" : "📁";
+      folderBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const name = await pickCollection(doc.collection || "", doc.collection ? "Change folder" : "Move to folder");
+        if (name !== null) moveDocsToCollection([doc.id], name);
+      });
+      actions.appendChild(folderBtn);
       actions.appendChild(starBtn);
       actions.appendChild(trashBtn);
 
@@ -309,6 +333,14 @@
     const trash = mk("button", "row-icon-btn trash", "✕");
     trash.title = "Delete (move to trash)";
     trash.addEventListener("click", (e) => { e.stopPropagation(); deleteDocument(doc.id, doc.title); });
+    const fold = mk("button", "row-icon-btn folder-btn" + (doc.collection ? " active" : ""), doc.collection ? "📂" : "📁");
+    fold.title = doc.collection ? `In folder "${doc.collection}" - click to change or take out` : "Move to a folder";
+    fold.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const name = await pickCollection(doc.collection || "", doc.collection ? "Change folder" : "Move to folder");
+      if (name !== null) moveDocsToCollection([doc.id], name);
+    });
+    wrap.appendChild(fold);
     wrap.appendChild(star);
     wrap.appendChild(trash);
     return wrap;
@@ -317,9 +349,25 @@
   function wireOpen(node, doc) {
     node.dataset.id = doc.id;
     node.tabIndex = 0;
-    node.addEventListener("click", () => openDocument(doc.id));
+    node.draggable = true;      // drag onto a folder to put the document (or the whole selection) inside
+    node.addEventListener("dragstart", (e) => {
+      const ids = state.selected.has(doc.id) ? Array.from(state.selected) : [doc.id];
+      e.dataTransfer.setData(DOCS_MIME, JSON.stringify(ids));
+      e.dataTransfer.setData("text/plain", doc.title || "Untitled");
+      e.dataTransfer.effectAllowed = "move";
+      if (ids.length > 1) { const g = mk("div", "drag-ghost", ids.length + " documents"); document.body.appendChild(g); e.dataTransfer.setDragImage(g, 10, 10); setTimeout(() => g.remove(), 0); }
+      document.body.classList.add("dragging-docs");
+      node.classList.add("dragging");
+    });
+    node.addEventListener("dragend", () => { document.body.classList.remove("dragging-docs"); node.classList.remove("dragging"); });
+    node.addEventListener("click", (e) => {
+      if (state.selected.size > 0 || e.ctrlKey || e.metaKey || e.shiftKey) toggleSelect(doc.id);
+      else openDocument(doc.id);
+    });
     node.addEventListener("keydown", (e) => {
-      if (e.target === node && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openDocument(doc.id); }
+      if (e.target !== node) return;
+      if (e.key === "Enter") { e.preventDefault(); openDocument(doc.id); }
+      else if (e.key === " ") { e.preventDefault(); toggleSelect(doc.id); }
     });
   }
 
@@ -329,6 +377,8 @@
     homeViewToggle.title = isList ? "Grid view" : "List view";
     homeViewToggle.setAttribute("aria-label", homeViewToggle.title);
     homeContent.innerHTML = "";
+    homeView.classList.toggle("selecting", state.selected.size > 0);
+    updateSelBar();
 
     const docs = filteredDocuments();
     if (docs.length === 0) {
@@ -358,10 +408,12 @@
         name.appendChild(mk("span", "home-doc-icon"));
         name.appendChild(mk("span", "home-row-title", doc.title || "Untitled"));
         row.appendChild(name);
-        row.appendChild(mk("span", "home-row-tags", (doc.tags || []).join(", ")));
+        row.appendChild(mk("span", "home-row-tags", [doc.collection ? "📁 " + doc.collection : "", (doc.tags || []).join(", ")].filter(Boolean).join(" · ")));
         row.appendChild(mk("span", "home-row-date", fmtDate(doc.updatedAt)));
         row.appendChild(homeActions(doc));
-        row.title = doc.title || "Untitled";
+        row.dataset.fullname = doc.title || "Untitled";
+        row.appendChild(selectCheck(doc));
+        row.classList.toggle("selected", state.selected.has(doc.id));
         wireOpen(row, doc);
         list.appendChild(row);
       }
@@ -375,11 +427,13 @@
         foot.appendChild(mk("span", "home-doc-icon"));
         const meta = mk("div", "home-card-meta");
         meta.appendChild(mk("div", "home-card-title", doc.title || "Untitled"));
-        meta.appendChild(mk("div", "home-card-date", fmtDate(doc.updatedAt)));
+        meta.appendChild(mk("div", "home-card-date", (doc.collection ? "📁 " + doc.collection + " · " : "") + fmtDate(doc.updatedAt)));
         foot.appendChild(meta);
         foot.appendChild(homeActions(doc));
         card.appendChild(foot);
-        card.title = doc.title || "Untitled";
+        card.dataset.fullname = doc.title || "Untitled";
+        card.appendChild(selectCheck(doc));
+        card.classList.toggle("selected", state.selected.has(doc.id));
         wireOpen(card, doc);
         grid.appendChild(card);
       }
@@ -395,9 +449,426 @@
   const jsonImportInput = el("jsonImportInput");
   el("homeImportBtn").addEventListener("click", () => jsonImportInput.click());
   jsonImportInput.addEventListener("change", () => {
-    const f = jsonImportInput.files && jsonImportInput.files[0];
-    if (f) doImportJson(f);
+    const files = Array.from(jsonImportInput.files || []);
     jsonImportInput.value = "";
+    importFiles(files);
+  });
+  // drag files onto the home page to import them
+  homeView.addEventListener("dragover", (e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) e.preventDefault(); });
+  homeView.addEventListener("drop", (e) => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); importFiles(e.dataTransfer.files); } });
+
+
+  /* ---------------- Collections (folders) ---------------- */
+  const homeCollections = el("homeCollections");
+  const collectionSelect = el("collectionSelect");
+  function allCollections() {
+    const m = new Map();
+    state.allDocs.forEach((d) => { if (d.collection) m.set(d.collection, (m.get(d.collection) || 0) + 1); });
+    state.extraCollections.forEach((c) => { if (!m.has(c)) m.set(c, 0); });
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }
+  function setCollection(name) {
+    state.collection = state.collection === name ? "" : name;
+    renderList();
+  }
+  const DOCS_MIME = "application/x-docly-docs";
+  const draggedIds = (e) => { try { return JSON.parse(e.dataTransfer.getData(DOCS_MIME) || "[]"); } catch (_) { return []; } };
+  const hasDocs = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes(DOCS_MIME);
+  // make an element accept dragged documents
+  function dropTarget(node, onDrop) {
+    node.addEventListener("dragover", (e) => { if (hasDocs(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; node.classList.add("drop"); } });
+    node.addEventListener("dragleave", () => node.classList.remove("drop"));
+    node.addEventListener("drop", (e) => {
+      node.classList.remove("drop");
+      if (!hasDocs(e)) return;
+      e.preventDefault();
+      const ids = draggedIds(e);
+      if (ids.length) onDrop(ids);
+    });
+  }
+  function renderCollections() {
+    const cols = allCollections();
+    homeCollections.innerHTML = "";
+    const chip = (cls, label, count, onClick) => {
+      const b2 = mk("button", "coll-chip " + cls); b2.type = "button";
+      b2.appendChild(document.createTextNode(label));
+      if (count != null) b2.appendChild(mk("span", "coll-n", String(count)));
+      b2.addEventListener("click", onClick);
+      homeCollections.appendChild(b2);
+      return b2;
+    };
+    const all = chip(state.collection ? "" : "active", "All documents", state.allDocs.length, () => { state.collection = ""; renderList(); });
+    all.title = "Show every document";
+    cols.forEach(([name, n]) => {
+      const f = chip(state.collection === name ? "folder active" : "folder", (state.collection === name ? "📂 " : "📁 ") + name + " ", n, () => setCollection(name));
+      f.title = "Open folder \"" + name + "\". Drag documents here to put them inside. Right-click to rename or delete.";
+      f.dataset.folder = name;
+      dropTarget(f, (ids) => moveDocsToCollection(ids, name));
+    });
+    const add = chip("coll-new", "＋ New folder", null, createCollection);
+    add.title = "Create a folder (or drop documents here to put them in a new folder)";
+    dropTarget(add, async (ids) => { const name = await createCollection(true); if (name) moveDocsToCollection(ids, name); });
+    const out = chip("coll-out", "↩ Take out of folder", null, () => {});
+    out.title = "Drop documents here to remove them from their folder";
+    dropTarget(out, (ids) => moveDocsToCollection(ids, ""));
+    if (state.collection) {
+      const ren = mk("button", "coll-tool", "Rename folder"); ren.type = "button";
+      ren.addEventListener("click", () => renameCollection(state.collection));
+      const del = mk("button", "coll-tool", "Delete folder"); del.type = "button";
+      del.addEventListener("click", () => deleteCollection(state.collection));
+      homeCollections.appendChild(ren); homeCollections.appendChild(del);
+    }
+    // sidebar selector
+    collectionSelect.innerHTML = "";
+    const optAll = document.createElement("option"); optAll.value = ""; optAll.textContent = "All folders";
+    collectionSelect.appendChild(optAll);
+    cols.forEach(([name, n]) => {
+      const o = document.createElement("option"); o.value = name; o.textContent = "📁 " + name + " (" + n + ")";
+      collectionSelect.appendChild(o);
+    });
+    collectionSelect.value = state.collection;
+  }
+  collectionSelect.addEventListener("change", () => { state.collection = collectionSelect.value; renderList(); });
+
+  // Right-click on a folder tile: small menu to rename or delete the folder (its documents are kept).
+  let folderMenu = null;
+  function closeFolderMenu() { if (folderMenu) { folderMenu.remove(); folderMenu = null; } }
+  homeCollections.addEventListener("contextmenu", (e) => {
+    const chip = e.target.closest && e.target.closest(".coll-chip.folder");
+    if (!chip || !chip.dataset.folder) return;
+    e.preventDefault();
+    closeFolderMenu();
+    const name = chip.dataset.folder;
+    const m = document.createElement("div");
+    m.className = "ctx-menu";
+    m.setAttribute("role", "menu");
+    const add = (label, danger, fn) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "ctx-item" + (danger ? " danger" : ""); b.textContent = label;
+      b.addEventListener("click", () => { closeFolderMenu(); fn(); });
+      m.appendChild(b);
+    };
+    add("Rename folder", false, () => renameCollection(name));
+    add("Delete folder", true, () => deleteCollection(name));
+    document.body.appendChild(m);
+    const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+    m.style.left = Math.max(4, Math.min(e.clientX, vw - m.offsetWidth - 4)) + "px";
+    m.style.top = Math.max(4, Math.min(e.clientY, vh - m.offsetHeight - 4)) + "px";
+    folderMenu = m;
+  });
+  document.addEventListener("mousedown", (e) => { if (folderMenu && !folderMenu.contains(e.target)) closeFolderMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeFolderMenu(); });
+  window.addEventListener("blur", closeFolderMenu);
+  window.addEventListener("resize", closeFolderMenu);
+  document.addEventListener("scroll", closeFolderMenu, true);
+
+  const cleanCollectionName = (v) => String(v || "").replace(/[\u0000-\u001f]/g, "").replace(/\s+/g, " ").trim().slice(0, 60);
+  async function createCollection(returnName) {
+    const name = cleanCollectionName(await showModal("New folder", "Name of the folder:", "", true));
+    if (!name) return "";
+    try {
+      await api("/api/collections/create", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      if (!state.extraCollections.includes(name)) state.extraCollections.push(name);
+      if (returnName !== true) { state.collection = name; showToast("Folder created: drag documents onto it to fill it"); }
+      renderList();
+      return name;
+    } catch (err) { showToast("Could not create the folder: " + err.message); return ""; }
+  }
+  async function renameCollection(name) {
+    const to = cleanCollectionName(await showModal("Rename folder", "New name:", name, true));
+    if (!to || to === name) return;
+    try {
+      await api("/api/collections/rename", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, to }) });
+      state.extraCollections = state.extraCollections.map((c) => (c === name ? to : c));
+      if (state.collection === name) state.collection = to;
+      if (state.currentDoc && state.currentDoc.collection === name) state.currentDoc.collection = to;
+      await loadDocuments();
+    } catch (err) { showToast("Could not rename the folder: " + err.message); }
+  }
+  async function deleteCollection(name) {
+    const r = await showChoice("Delete folder", `Delete the folder "${name}"? Its documents are kept and simply leave the folder.`, [
+      { label: "Cancel", value: "cancel" }, { label: "Delete folder", value: "delete", primary: true },
+    ]);
+    if (r !== "delete") return;
+    try {
+      await api("/api/collections/delete", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      state.extraCollections = state.extraCollections.filter((c) => c !== name);
+      if (state.currentDoc && state.currentDoc.collection === name) state.currentDoc.collection = "";
+      if (state.collection === name) state.collection = "";
+      await loadDocuments();
+    } catch (err) { showToast("Delete error: " + err.message); }
+  }
+  // Dialog: choose a collection. Resolves with the name, "" (no collection) or null (cancelled).
+  function pickCollection(current, title) {
+    return new Promise((resolve) => {
+      const ov = document.createElement("div"); ov.className = "modal-overlay";
+      const box = document.createElement("div"); box.className = "modal tags-dialog";
+      box.innerHTML = '<div class="modal-header"><h3></h3><button class="modal-close" type="button">&times;</button></div>' +
+        '<div class="modal-body"><div class="pick-list"></div>' +
+        '<div class="tags-dialog-add"><input type="text" class="modal-input" placeholder="New folder name" autocomplete="off"><button type="button" class="modal-btn modal-btn-ok">Create and move</button></div></div>';
+      box.querySelector("h3").textContent = title || "Move to folder";
+      const list = box.querySelector(".pick-list"), input = box.querySelector("input");
+      const done = (v) => { document.removeEventListener("keydown", onKey, true); ov.remove(); resolve(v); };
+      const chip = (label, value, active, extra) => {
+        const b2 = mk("button", "coll-chip" + (active ? " active" : "") + (extra ? " " + extra : ""), label); b2.type = "button";
+        b2.addEventListener("click", () => done(value)); list.appendChild(b2);
+      };
+      if (current) chip("↩ Take out of folder \"" + current + "\"", "", false, "coll-out-pick");
+      allCollections().forEach(([n]) => chip((current === n ? "📂 " : "📁 ") + n, n, current === n, "folder"));
+      if (!allCollections().length) list.appendChild(mk("div", "pick-empty", "No folders yet: type a name below to create the first one."));
+      const create = () => { const n = cleanCollectionName(input.value); if (n) done(n); };
+      const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); done(null); } else if (e.key === "Enter" && e.target === input) { e.preventDefault(); e.stopPropagation(); create(); } };
+      document.addEventListener("keydown", onKey, true);
+      ov.addEventListener("mousedown", (e) => { if (e.target === ov) done(null); });
+      box.querySelector(".modal-close").onclick = () => done(null);
+      box.querySelector(".tags-dialog-add .modal-btn").onclick = create;
+      ov.appendChild(box); document.body.appendChild(ov); input.focus();
+    });
+  }
+  async function moveDocsToCollection(ids, name) {
+    try {
+      for (const id of ids) {
+        await api("/api/documents/" + encodeURIComponent(id), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ collection: name }) });
+        [state.documents, state.allDocs].forEach((list) => { const d = list.find((x) => x.id === id); if (d) d.collection = name; });
+        if (state.currentDoc && state.currentId === id) state.currentDoc.collection = name;
+      }
+      if (name && !state.allDocs.some((d) => d.collection === name)) state.extraCollections.push(name);
+      renderList();
+      showToast(name ? (ids.length === 1 ? `Moved to folder "${name}"` : `${ids.length} documents moved to "${name}"`) : (ids.length === 1 ? "Taken out of its folder" : `${ids.length} documents taken out of their folders`));
+    } catch (err) { showToast("Could not move: " + err.message); }
+  }
+  async function moveCurrentToCollection() {
+    if (!state.currentId) return;
+    const cur = (state.currentDoc && state.currentDoc.collection) || "";
+    const name = await pickCollection(cur, cur ? "Change folder" : "Move to folder");
+    if (name !== null) moveDocsToCollection([state.currentId], name);
+  }
+
+  /* ---------------- Multiple selection on the home page ---------------- */
+  function selectCheck(doc) {
+    const b = mk("span", "sel-check");
+    b.setAttribute("role", "checkbox"); b.title = "Select";
+    b.addEventListener("click", (e) => { e.stopPropagation(); toggleSelect(doc.id); });
+    return b;
+  }
+  function toggleSelect(id) {
+    if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+    renderHome();
+  }
+  function updateSelBar() {
+    const n = state.selected.size, bar = el("selBar");
+    bar.classList.toggle("hidden", n === 0);
+    el("selCount").textContent = n + " selected";
+    el("selOut").classList.toggle("hidden", !state.allDocs.some((d) => state.selected.has(d.id) && d.collection));
+  }
+  el("selAll").addEventListener("click", () => { filteredDocuments().forEach((d) => state.selected.add(d.id)); renderHome(); });
+  el("selClear").addEventListener("click", () => { state.selected.clear(); renderHome(); });
+  el("selMove").addEventListener("click", async () => {
+    const name = await pickCollection("", "Move " + state.selected.size + " document" + (state.selected.size === 1 ? "" : "s") + " to a folder");
+    if (name !== null && name !== "") { const ids = Array.from(state.selected); state.selected.clear(); await moveDocsToCollection(ids, name); }
+  });
+  el("selOut").addEventListener("click", async () => {
+    const ids = Array.from(state.selected); state.selected.clear(); await moveDocsToCollection(ids, "");
+  });
+  const safeFileName = (t) => (t || "document").replace(/[\\/:*?"<>|]+/g, "_").trim() || "document";
+  async function exportDocsZip(ids) {
+    const files = [], used = new Set();
+    for (const id of ids) {
+      const d = await api("/api/documents/" + encodeURIComponent(id));
+      const base = safeFileName(d.title);
+      let name = base + "_Docly.json", i = 1;
+      while (used.has(name)) name = base + " (" + (++i) + ")_Docly.json";
+      used.add(name);
+      files.push({ name, data: JSON.stringify(buildBackup(d, d.content || ""), null, 2) });
+    }
+    downloadBlob(makeZip(files, "application/zip"), "Docly_backup.zip");
+  }
+  el("selExport").addEventListener("click", async () => {
+    try { await exportDocsZip(Array.from(state.selected)); showToast("Backup (ZIP) downloaded"); }
+    catch (err) { showToast("Export failed: " + err.message); }
+  });
+  el("selDelete").addEventListener("click", async () => {
+    const ids = Array.from(state.selected), n = ids.length;
+    const first = await showChoice("Delete documents", `Do you want to delete ${n} document${n === 1 ? "" : "s"}?`, [
+      { label: "Cancel", value: "cancel" }, { label: "Delete", value: "delete", primary: true },
+    ]);
+    if (first !== "delete") return;
+    const second = await showChoice("Delete or export first?", `${n} document${n === 1 ? "" : "s"} will be moved to the trash. You can also download a ZIP with one JSON backup per document: importing it again restores them as if they had never been deleted.`, [
+      { label: "Cancel", value: "cancel" }, { label: "Delete", value: "delete" }, { label: "Export ZIP and delete", value: "export", primary: true },
+    ]);
+    if (second !== "delete" && second !== "export") return;
+    if (second === "export") {
+      try { await exportDocsZip(ids); } catch (err) { showToast("Export failed, nothing deleted: " + err.message); return; }
+    }
+    try {
+      for (const id of ids) await api("/api/documents/" + encodeURIComponent(id), { method: "DELETE" });
+      state.documents = state.documents.filter((d) => !ids.includes(d.id));
+      state.allDocs = state.allDocs.filter((d) => !ids.includes(d.id));
+      state.selected.clear();
+      renderList();
+      showToast(n + " document" + (n === 1 ? "" : "s") + " moved to trash");
+    } catch (err) { showToast("Delete error: " + err.message); await loadDocuments(); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.selected.size && !homeView.classList.contains("hidden") && modalOverlay.classList.contains("hidden")) { state.selected.clear(); renderHome(); }
+  });
+
+
+  /* ---------------- Header, footer and page numbers ---------------- */
+  const pageHeaderEl = el("pageHeader"), pageFooterEl = el("pageFooter");
+  const PN_POS = ["none", "top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right"];
+  function docLayout() {
+    const l = (state.currentDoc && state.currentDoc.layout) || {};
+    return { header: l.header || "", footer: l.footer || "", pageNumbers: PN_POS.includes(l.pageNumbers) ? l.pageNumbers : "none", skipFirst: !!l.skipFirst };
+  }
+  // Segments of the header / footer in its three zones: text, or the page number / page count fields.
+  function hfSegments(kind) {
+    const L = docLayout(), text = kind === "top" ? L.header : L.footer;
+    const out = { l: [], c: [], r: [] };
+    const title = (state.currentDoc && state.currentDoc.title) || "";
+    if (text) {
+      text.split(/(\{pages?\}|\{title\}|\{date\})/i).forEach((part) => {
+        if (!part) return;
+        const m = part.toLowerCase();
+        if (m === "{page}") out.c.push({ t: "page" });
+        else if (m === "{pages}") out.c.push({ t: "pages" });
+        else if (m === "{title}") out.c.push({ t: "text", v: title });
+        else if (m === "{date}") out.c.push({ t: "text", v: new Date().toLocaleDateString() });
+        else out.c.push({ t: "text", v: part });
+      });
+    }
+    if (L.pageNumbers !== "none" && L.pageNumbers.startsWith(kind)) {
+      const z = { left: "l", center: "c", right: "r" }[L.pageNumbers.split("-")[1]];
+      if (out[z].length) out[z].push({ t: "text", v: "   " });
+      out[z].push({ t: "page" });
+    }
+    return out;
+  }
+  const hfEmpty = (s2) => !s2.l.length && !s2.c.length && !s2.r.length;
+  const hfText = (segs, page, pages) => segs.map((x) => (x.t === "page" ? String(page) : x.t === "pages" ? String(pages) : x.v)).join("");
+
+  function renderHeaderFooter() {
+    [[pageHeaderEl, "top"], [pageFooterEl, "bottom"]].forEach(([node, kind]) => {
+      const segs = state.currentDoc ? hfSegments(kind) : { l: [], c: [], r: [] };
+      const on = !hfEmpty(segs);
+      node.classList.toggle("on", on);
+      if (!on) return;
+      ["l", "c", "r"].forEach((z) => { node.querySelector(".hf-" + z).textContent = hfText(segs[z], 1, 1); });
+      const cs = getComputedStyle(richEditor);
+      const mTop = parseFloat(cs.paddingTop) || 0, mBot = parseFloat(cs.paddingBottom) || 0;
+      node.style.paddingLeft = cs.paddingLeft; node.style.paddingRight = cs.paddingRight;
+      if (kind === "top") node.style.top = Math.max(4, mTop / 2 - 6) + "px"; else node.style.bottom = Math.max(4, mBot / 2 - 6) + "px";
+    });
+  }
+
+  // Printing: page-margin boxes (Chrome / Edge) carry the header, footer and page numbers on every printed page
+  function applyPrintHF() {
+    let st = document.getElementById("hfPrintStyle");
+    if (!st) { st = document.createElement("style"); st.id = "hfPrintStyle"; document.head.appendChild(st); }
+    if (!state.currentDoc) { st.textContent = ""; return; }
+    const L = docLayout(), top = hfSegments("top"), bot = hfSegments("bottom");
+    if (hfEmpty(top) && hfEmpty(bot)) { st.textContent = ""; return; }
+    const q = (t) => '"' + String(t).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ") + '"';
+    const content = (segs) => segs.map((x) => (x.t === "page" ? "counter(page)" : x.t === "pages" ? "counter(pages)" : q(x.v))).join(" ");
+    const NAMES = { l: "left", c: "center", r: "right" };
+    const boxes = [];
+    [["top", top], ["bottom", bot]].forEach(([kind, segs]) => ["l", "c", "r"].forEach((z) => { if (segs[z].length) boxes.push([kind + "-" + NAMES[z], content(segs[z])]); }));
+    const style = "font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #555;";
+    const cs = getComputedStyle(richEditor);
+    const paper = window.__pagePaper ? window.__pagePaper() : { w: 12240, h: 15840 };
+    let css = "@page { size: " + (paper.w / 1440) + "in " + (paper.h / 1440) + "in; margin: " + cs.paddingTop + " " + cs.paddingRight + " " + cs.paddingBottom + " " + cs.paddingLeft + ";" +
+      boxes.map(([b, c]) => " @" + b + " { content: " + c + "; " + style + " }").join("") + " }";
+    if (L.skipFirst) css += " @page :first {" + boxes.map(([b]) => " @" + b + " { content: none; }").join("") + " }";
+    st.textContent = css;
+  }
+  window.addEventListener("beforeprint", () => { applyPrintHF(); });
+
+  function setLayout(patch) {
+    if (!state.currentDoc) return;
+    state.currentDoc.layout = Object.assign({}, state.currentDoc.layout || {}, patch);
+    renderHeaderFooter(); applyPrintHF(); scheduleSave();
+  }
+  async function showHeaderFooter() {
+    if (!needOpenDoc()) return;
+    const cur = docLayout();
+    const res = await formDialog("Header & footer", [
+      { key: "header", label: "Header text", type: "text", value: cur.header },
+      { key: "footer", label: "Footer text", type: "text", value: cur.footer },
+      { key: "pageNumbers", label: "Page numbers", type: "select", value: cur.pageNumbers, options: [["none", "None"], ["top-left", "Top left"], ["top-center", "Top center"], ["top-right", "Top right"], ["bottom-left", "Bottom left"], ["bottom-center", "Bottom center"], ["bottom-right", "Bottom right"]] },
+      { key: "skipFirst", label: "First page", type: "select", value: cur.skipFirst ? "skip" : "show", options: [["show", "Show header, footer and number"], ["skip", "Hide them on the first page"]] },
+    ], "OK");
+    if (!res) return;
+    setLayout({ header: String(res.header || "").slice(0, 300), footer: String(res.footer || "").slice(0, 300), pageNumbers: res.pageNumbers, skipFirst: res.skipFirst === "skip" });
+    showToast("In the text you can use {page}, {pages}, {title} and {date}");
+  }
+
+  /* ---------------- Footnotes (listed at the end of the document, renumbered automatically) ---------------- */
+  const fnNewId = () => "fn" + Math.random().toString(36).slice(2, 8);
+  function makeFnNote(id, num, text) {
+    const n = document.createElement("div");
+    n.className = "fn-note"; n.dataset.fn = id;
+    const sup = document.createElement("sup"); sup.className = "fn-num"; sup.textContent = String(num); sup.setAttribute("contenteditable", "false");
+    const t = document.createElement("span"); t.className = "fn-text"; t.setAttribute("contenteditable", "true"); t.textContent = text || "";
+    n.appendChild(sup); n.appendChild(document.createTextNode(" ")); n.appendChild(t);
+    return n;
+  }
+  function ensureFnSection() {
+    let sec = richEditor.querySelector(".fn-section");
+    if (sec) return sec;
+    sec = document.createElement("div");
+    sec.className = "fn-section"; sec.setAttribute("contenteditable", "false");
+    sec.innerHTML = '<hr class="fn-rule">';
+    const last = richEditor.lastElementChild;
+    if (last && last.tagName === "P" && !last.textContent.trim() && !last.querySelector("table,hr")) richEditor.insertBefore(sec, last);
+    else { richEditor.appendChild(sec); const p2 = document.createElement("p"); p2.innerHTML = "<br>"; richEditor.appendChild(p2); }
+    return sec;
+  }
+  function renumberFootnotes() {
+    const refs = Array.from(richEditor.querySelectorAll("sup.fn-ref"));
+    let sec = richEditor.querySelector(".fn-section");
+    if (!refs.length) { if (sec) sec.remove(); return; }
+    if (!sec) sec = ensureFnSection();
+    const notes = new Map(Array.from(sec.querySelectorAll(".fn-note")).map((n) => [n.dataset.fn, n]));
+    const seen = new Set(), keep = [];
+    refs.forEach((r, i) => {
+      let id = r.dataset.fn;
+      if (seen.has(id)) {                       // a copied reference: give it its own note
+        const src = notes.get(id), nid = fnNewId();
+        r.dataset.fn = id = nid;
+        notes.set(id, makeFnNote(id, i + 1, src ? src.querySelector(".fn-text").textContent : ""));
+      }
+      seen.add(id);
+      let n = notes.get(id);
+      if (!n) { n = makeFnNote(id, i + 1, ""); notes.set(id, n); }
+      if (r.textContent !== String(i + 1)) r.textContent = String(i + 1);
+      const num = n.querySelector(".fn-num");
+      if (num.textContent !== String(i + 1)) num.textContent = String(i + 1);
+      keep.push(n);
+    });
+    Array.from(sec.querySelectorAll(".fn-note")).forEach((n) => { if (!keep.includes(n)) n.remove(); });
+    keep.forEach((n, i) => { if (sec.children[i + 1] !== n) sec.insertBefore(n, sec.children[i + 1] || null); });
+  }
+  function insertFootnote() {
+    if (!needOpenDoc()) return;
+    focusRich(); restoreSelection();
+    const id = fnNewId();
+    document.execCommand("insertHTML", false, '<sup class="fn-ref" data-fn="' + id + '" contenteditable="false">0</sup>');
+    ensureFnSection().appendChild(makeFnNote(id, 0, ""));
+    renumberFootnotes();
+    const t = richEditor.querySelector('.fn-note[data-fn="' + id + '"] .fn-text');
+    if (t) { t.focus(); const r = document.createRange(); r.selectNodeContents(t); r.collapse(false); const sl = window.getSelection(); sl.removeAllRanges(); sl.addRange(r); t.scrollIntoView({ block: "nearest" }); }
+    scheduleSave();
+  }
+  let fnTimer = 0;
+  richEditor.addEventListener("input", () => {
+    if (!richEditor.querySelector("sup.fn-ref, .fn-section")) return;
+    clearTimeout(fnTimer); fnTimer = setTimeout(renumberFootnotes, 300);
+  });
+  richEditor.addEventListener("click", (e) => {
+    const ref = e.target.closest && e.target.closest("sup.fn-ref");
+    const num = e.target.closest && e.target.closest(".fn-note .fn-num");
+    if (ref) { const t = richEditor.querySelector('.fn-note[data-fn="' + ref.dataset.fn + '"]'); if (t) t.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    else if (num) { const r = richEditor.querySelector('sup.fn-ref[data-fn="' + num.parentNode.dataset.fn + '"]'); if (r) r.scrollIntoView({ block: "center", behavior: "smooth" }); }
   });
 
   function escapeHtml(s) {
@@ -434,6 +905,7 @@
     richEditor.innerHTML = (doc.content || "").replace(/ class="cell-sel"/g, "");
     richEditor.querySelectorAll("img").forEach((img) => img.remove());   // images are not supported
     if (window.__doclyAfterOpen) window.__doclyAfterOpen();
+    renderHeaderFooter(); applyPrintHF();
 
     renderList();
     updateStatusBar();
@@ -442,6 +914,7 @@
   function closeEditor() {
     state.currentId = null;
     state.currentDoc = null;
+    renderHeaderFooter(); applyPrintHF();
     editorWrap.classList.add("hidden");
     appEl.classList.add("home-mode");
     appEl.classList.remove("sidebar-closed");
@@ -531,7 +1004,10 @@
   }
 
   const statusPos = el("statusPos"), statusChars = el("statusChars"), statusWords = el("statusWords");
-  function updateStatusBar() {
+  // updateStatusBar() is cheap to call: the real work (reading the whole text) runs once, shortly after the last call
+  let sbTimer = 0;
+  function updateStatusBar() { clearTimeout(sbTimer); sbTimer = setTimeout(computeStatusBar, 100); }
+  function computeStatusBar() {
     let chars = 0, words = 0, line = 1, col = 1;
     if (state.currentDoc) {
       const text = richEditor.innerText || "";
@@ -560,7 +1036,7 @@
       const updated = await api("/api/documents/" + encodeURIComponent(state.currentId), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: doc.content, tags: doc.tags || [] }),
+        body: JSON.stringify({ content: doc.content, tags: doc.tags || [], layout: doc.layout || {} }),
       });
       state.dirty = false;
       setSaveStatus("saved");
@@ -678,6 +1154,8 @@
       const updated = await api("/api/documents/" + encodeURIComponent(id) + "/favorite", { method: "PUT" });
       const idx = state.documents.findIndex((d) => d.id === updated.id);
       if (idx >= 0) state.documents[idx].favorite = updated.favorite;
+      const ai = state.allDocs.findIndex((d) => d.id === updated.id);
+      if (ai >= 0) state.allDocs[ai].favorite = updated.favorite;
       if (state.currentId === id) {
         state.currentDoc.favorite = updated.favorite;
         favBtn.classList.toggle("active", !!updated.favorite);
@@ -715,6 +1193,8 @@
       if (state.currentId === id) editorWrap.classList.add("doc-leave");
       await new Promise((res) => setTimeout(res, 260));
       state.documents = state.documents.filter((d) => d.id !== id);
+      state.allDocs = state.allDocs.filter((d) => d.id !== id);
+      state.selected.delete(id);
       if (state.currentId === id) closeEditor();
       editorWrap.classList.remove("doc-leave");
       renderList();
@@ -792,9 +1272,11 @@
     const r = selectionInEditor();
     if (r) {
       savedRange = r.cloneRange();
-      syncToolbar();
+      clearTimeout(tbTimer);
+      tbTimer = setTimeout(syncToolbar, 60);   // coalesce bursts of selection changes (Ctrl+A, shift+arrows…)
     }
   });
+  let tbTimer = 0;
 
   function restoreSelection() {
     if (savedRange && !selectionInEditor()) {
@@ -1200,18 +1682,22 @@
   /* ---------------- Toolbar state (active buttons) ---------------- */
   function syncToolbar() {
     if (!state.currentDoc || !selectionInEditor()) return;
+    // a huge selection (select all) makes every queryCommandState walk the whole document: skip them there
+    const big = (() => { const r = selectionInEditor(); return !!r && !r.collapsed && r.toString().length > 2500; })();
     document.querySelectorAll(".tb-btn[data-cmd]").forEach((b) => {
       let on = false;
-      try { on = document.queryCommandState(b.dataset.cmd); } catch (_) {}
+      if (!big) { try { on = document.queryCommandState(b.dataset.cmd); } catch (_) {} }
       b.classList.toggle("active", !!on);
     });
     const n = activeElement();
     el("linkBtn").classList.toggle("active", !!(n && n.closest && n.closest("a")));
     el("codeBtn").classList.toggle("active", !!(n && n.closest && n.closest("pre")));
 
-    const blk = (document.queryCommandValue("formatBlock") || "").toUpperCase().replace(/[<>]/g, "");
-    blockSelect.value = currentBlockStyle(blk);
-    syncFontFamily();
+    if (!big) {
+      const blk = (document.queryCommandValue("formatBlock") || "").toUpperCase().replace(/[<>]/g, "");
+      blockSelect.value = currentBlockStyle(blk);
+      syncFontFamily();
+    }
     if (document.activeElement !== fontSizeInput) fontSizeInput.value = fmtPt(currentFontSizePt());
     updateColorBars();
     updateRulerMarkers();
@@ -1233,8 +1719,8 @@
     applyBlockStyle(blockSelect.value);
   });
 
-  el("undoBtn").addEventListener("click", () => { focusRich(); document.execCommand("undo"); scheduleSave(); });
-  el("redoBtn").addEventListener("click", () => { focusRich(); document.execCommand("redo"); scheduleSave(); });
+  el("undoBtn").addEventListener("click", () => { focusRich(); if (!fastUndoNow()) { document.execCommand("undo"); scheduleSave(); } });
+  el("redoBtn").addEventListener("click", () => { focusRich(); if (!fastRedoNow()) { document.execCommand("redo"); scheduleSave(); } });
 
   caseBtn.addEventListener("click", () => {
     focusRich();
@@ -1753,18 +2239,41 @@ ${contentHtml()}
     }).join("");
 
     const body = blocksXml(blocks);
+    // header / footer: left, center and right zones separated by tab stops; page numbers are real Word fields
+    const hfPart = (kind) => {
+      const segs = hfSegments(kind);
+      if (hfEmpty(segs)) return null;
+      const total = page.w - page.left - page.right;
+      const run = (x) => x.t === "page" ? '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>'
+        : x.t === "pages" ? '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> NUMPAGES </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>'
+        : '<w:r><w:rPr><w:sz w:val="18"/><w:color w:val="595959"/></w:rPr><w:t xml:space="preserve">' + escXml(x.v) + "</w:t></w:r>";
+      const tag = kind === "top" ? "w:hdr" : "w:ftr";
+      const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<' + tag + " " + NS_HF + '><w:p><w:pPr><w:pStyle w:val="' + (kind === "top" ? "Header" : "Footer") + '"/><w:tabs><w:tab w:val="clear" w:pos="4680"/><w:tab w:val="clear" w:pos="9360"/><w:tab w:val="center" w:pos="' + Math.round(total / 2) + '"/><w:tab w:val="right" w:pos="' + total + '"/></w:tabs></w:pPr>' +
+        segs.l.map(run).join("") + "<w:r><w:tab/></w:r>" + segs.c.map(run).join("") + "<w:r><w:tab/></w:r>" + segs.r.map(run).join("") + "</" + tag + ">";
+      return xml.replace("</" + tag + ">", "</w:p></" + tag + ">");
+    };
+    const NS_HF = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+    const hdrXml = hfPart("top"), ftrXml = hfPart("bottom");
+    const hfRefs = (hdrXml ? '<w:headerReference w:type="default" r:id="rIdHdr"/>' : "") + (ftrXml ? '<w:footerReference w:type="default" r:id="rIdFtr"/>' : "");
+    const titlePg = docLayout().skipFirst && (hdrXml || ftrXml) ? "<w:titlePg/>" : "";
     const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
     const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document ${NS}><w:body>${body}<w:sectPr><w:pgSz w:w="${page.w}" w:h="${page.h}"/><w:pgMar w:top="${page.top}" w:right="${page.right}" w:bottom="${page.bottom}" w:left="${page.left}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+<w:document ${NS}><w:body>${body}<w:sectPr>${hfRefs}<w:pgSz w:w="${page.w}" w:h="${page.h}"/><w:pgMar w:top="${page.top}" w:right="${page.right}" w:bottom="${page.bottom}" w:left="${page.left}" w:header="720" w:footer="720" w:gutter="0"/>${titlePg}</w:sectPr></w:body></w:document>`;
     const rels = links.map((href, i) =>
       `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escXml(href)}" TargetMode="External"/>`
-    ).join("");
+    ).join("") +
+      (hdrXml ? '<Relationship Id="rIdHdr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' : "") +
+      (ftrXml ? '<Relationship Id="rIdFtr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' : "");
+    const hfTypes = (hdrXml ? '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' : "") +
+      (ftrXml ? '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>' : "");
     return makeZip([
       { name: "[Content_Types].xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>` },
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>${hfTypes}</Types>` },
       { name: "_rels/.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>` },
       { name: "word/document.xml", data: documentXml },
+      ...(hdrXml ? [{ name: "word/header1.xml", data: hdrXml }] : []),
+      ...(ftrXml ? [{ name: "word/footer1.xml", data: ftrXml }] : []),
       { name: "word/_rels/document.xml.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>` },
     ]);
@@ -2106,7 +2615,147 @@ ${contentHtml()}
     return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255].map((x) => x.toFixed(3)).join(" ");
   };
 
-  function buildPdf() {
+  // ---- Embedded fonts for the PDF: the fonts installed on the computer are read through the browser's
+  // "local fonts" permission (Chrome / Edge). TrueType fonts are embedded whole, so text keeps the chosen
+  // font (Arial, Georgia…) in any PDF viewer; without access the standard PDF fonts are used.
+  let localFontsCache = null;
+  async function localFontList() {
+    if (localFontsCache) return { list: localFontsCache };
+    if (typeof window.queryLocalFonts !== "function") return { list: null, reason: "unsupported" };
+    try { localFontsCache = await window.queryLocalFonts(); return { list: localFontsCache }; }
+    catch (e) { return { list: null, reason: "denied" }; }
+  }
+  function parseTtf(buf, name) {
+    const dv = new DataView(buf);
+    if (buf.byteLength < 12) return null;
+    const sig = dv.getUint32(0);
+    if (sig !== 0x00010000 && sig !== 0x74727565) return null;           // TrueType outlines only (no .otf/CFF, no .ttc)
+    const T = {};
+    for (let i = 0, n = dv.getUint16(4); i < n; i++) {
+      const o = 12 + i * 16;
+      T[String.fromCharCode(dv.getUint8(o), dv.getUint8(o + 1), dv.getUint8(o + 2), dv.getUint8(o + 3))] = { off: dv.getUint32(o + 8), len: dv.getUint32(o + 12) };
+    }
+    if (!T.glyf || !T.loca || !T.head || !T.hhea || !T.hmtx || !T.maxp || !T.cmap) return null;
+    const os2 = T["OS/2"];
+    if (os2 && (dv.getUint16(os2.off + 8) & 0x0202)) return null;         // licence forbids embedding
+    const upm = dv.getUint16(T.head.off + 18), numHM = dv.getUint16(T.hhea.off + 34);
+    const adv = (g) => dv.getUint16(T.hmtx.off + 4 * Math.min(g, numHM - 1));
+    const ct = T.cmap.off;
+    let best = null;
+    for (let i = 0, n = dv.getUint16(ct + 2); i < n; i++) {
+      const pid = dv.getUint16(ct + 4 + i * 8), eid = dv.getUint16(ct + 6 + i * 8), off = ct + dv.getUint32(ct + 8 + i * 8), fmt = dv.getUint16(off);
+      const score = pid === 3 && eid === 10 && fmt === 12 ? 4 : pid === 0 && fmt === 12 ? 3 : pid === 3 && eid === 1 && fmt === 4 ? 2 : pid === 0 && fmt === 4 ? 1 : 0;
+      if (score && (!best || score > best.score)) best = { score, off, fmt };
+    }
+    if (!best) return null;
+    const cache = new Map();
+    const gidOf = (cp) => {
+      if (cache.has(cp)) return cache.get(cp);
+      let g = 0;
+      if (best.fmt === 12) {
+        let lo = 0, hi = dv.getUint32(best.off + 12) - 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1, o = best.off + 16 + mid * 12, s = dv.getUint32(o), e = dv.getUint32(o + 4);
+          if (cp < s) hi = mid - 1; else if (cp > e) lo = mid + 1; else { g = dv.getUint32(o + 8) + (cp - s); break; }
+        }
+      } else if (cp < 0x10000) {
+        const sc = dv.getUint16(best.off + 6) / 2, endO = best.off + 14, startO = endO + 2 * sc + 2, deltaO = startO + 2 * sc, rangeO = deltaO + 2 * sc;
+        for (let k = 0; k < sc; k++) {
+          if (cp <= dv.getUint16(endO + 2 * k)) {
+            const st = dv.getUint16(startO + 2 * k);
+            if (cp >= st) {
+              const ro = dv.getUint16(rangeO + 2 * k), d = dv.getInt16(deltaO + 2 * k);
+              if (ro === 0) g = (cp + d) & 0xffff;
+              else { const gi = dv.getUint16(rangeO + 2 * k + ro + 2 * (cp - st)); g = gi ? (gi + d) & 0xffff : 0; }
+            }
+            break;
+          }
+        }
+      }
+      cache.set(cp, g);
+      return g;
+    };
+    const k = 1000 / upm, h = T.head.off, hh = T.hhea.off, post = T.post ? T.post.off : 0;
+    return {
+      buf, upm, adv, gidOf, name,
+      bbox: [dv.getInt16(h + 36) * k, dv.getInt16(h + 38) * k, dv.getInt16(h + 40) * k, dv.getInt16(h + 42) * k].map(Math.round),
+      ascent: Math.round(dv.getInt16(hh + 4) * k), descent: Math.round(dv.getInt16(hh + 6) * k),
+      capHeight: os2 && os2.len >= 96 && dv.getUint16(os2.off) >= 2 ? Math.round(dv.getInt16(os2.off + 88) * k) : Math.round(dv.getInt16(hh + 4) * k * 0.72),
+      italicAngle: post ? dv.getInt32(post + 4) / 65536 : 0, fixed: post ? dv.getUint32(post + 12) !== 0 : false,
+      used: new Map(),
+    };
+  }
+  const ttfWidth = (ttf, text, size) => { let w = 0; for (const ch of text) w += ttf.adv(ttf.gidOf(ch.codePointAt(0))); return (w / ttf.upm) * size; };
+  async function deflateBytes(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  function modelFamilies(model, out) {
+    (model || []).forEach((b) => {
+      if (b.runs) b.runs.forEach((r) => { if (r.font) out.add(r.font); });
+      if (b.rows) b.rows.forEach((row) => row.forEach((cell) => modelFamilies(cell, out)));
+    });
+    return out;
+  }
+  async function buildFontProvider(list, model) {
+    const fams = modelFamilies(model, new Set(["Arial", "Courier New"]));
+    const flags = (fd) => {
+      const s = (fd.style || "").toLowerCase();
+      return { b: /\bbold\b/.test(s) && !/semi|demi/.test(s), i: /italic|oblique/.test(s), odd: /light|thin|cond|narrow|semi|demi|black|heavy|medium|extra|ultra|book|display|caption/.test(s.replace(/\bbold\b/, "")) };
+    };
+    const variants = new Map(), loaded = new Map();
+    for (const fam of fams) {
+      const cands = list.filter((f) => (f.family || "").toLowerCase() === fam.toLowerCase());
+      const v = {};
+      for (const [b, i] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        const fd = cands.filter((f) => { const x = flags(f); return !x.odd && (x.b ? 1 : 0) === b && (x.i ? 1 : 0) === i; })[0];
+        if (!fd) continue;
+        if (!loaded.has(fd.postscriptName)) {
+          loaded.set(fd.postscriptName, (async () => { try { return parseTtf(await (await fd.blob()).arrayBuffer(), fd.postscriptName || fd.fullName || fam); } catch (e) { return null; } })());
+        }
+        const ttf = await loaded.get(fd.postscriptName);
+        if (ttf) v["" + b + i] = ttf;
+      }
+      if (Object.keys(v).length) variants.set(fam.toLowerCase(), v);
+    }
+    if (!variants.size) return null;
+    return {
+      pick(family, b, i) {
+        const v = variants.get((family || "").toLowerCase());
+        if (!v) return null;
+        for (const [wb, wi] of [[b, i], [b, 0], [0, i], [0, 0]]) {
+          const ttf = v["" + (wb ? 1 : 0) + (wi ? 1 : 0)];
+          if (ttf) return { ttf, synB: !!b && !wb, synI: !!i && !wi };
+        }
+        const any = Object.values(v)[0];
+        return any ? { ttf: any, synB: !!b, synI: !!i } : null;
+      },
+    };
+  }
+  function embeddedFontObjects(ent, firstNum) {
+    // 5 objects: Type0 font, CID font, descriptor, font file, ToUnicode
+    const ttf = ent.ttf, ps = (ttf.name || "Font").replace(/[^A-Za-z0-9_-]/g, "") || "Font";
+    const gids = Array.from(ttf.used.keys()).sort((a, b) => a - b);
+    const w = gids.map((g) => g + " [" + Math.round((ttf.adv(g) * 1000) / ttf.upm) + "]").join(" ");
+    const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, "0");
+    const utf16 = (cp) => (cp > 0xffff ? hex4(0xd800 + ((cp - 0x10000) >> 10)) + hex4(0xdc00 + ((cp - 0x10000) & 0x3ff)) : hex4(cp));
+    let bf = "";
+    for (let i = 0; i < gids.length; i += 100) {
+      const chunk = gids.slice(i, i + 100);
+      bf += chunk.length + " beginbfchar\n" + chunk.map((g) => "<" + hex4(g) + "> <" + utf16(ttf.used.get(g)) + ">").join("\n") + "\nendbfchar\n";
+    }
+    const cmap = "/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n" + bf + "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend";
+    const flagsN = 32 + (ttf.italicAngle ? 64 : 0) + (ttf.fixed ? 1 : 0);
+    return [
+      { dict: "<< /Type /Font /Subtype /Type0 /BaseFont /" + ps + " /Encoding /Identity-H /DescendantFonts [" + (firstNum + 1) + " 0 R] /ToUnicode " + (firstNum + 4) + " 0 R >>" },
+      { dict: "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /" + ps + " /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor " + (firstNum + 2) + " 0 R /DW 1000 /W [" + w + "] /CIDToGIDMap /Identity >>" },
+      { dict: "<< /Type /FontDescriptor /FontName /" + ps + " /Flags " + flagsN + " /FontBBox [" + ttf.bbox.join(" ") + "] /ItalicAngle " + ttf.italicAngle.toFixed(2) + " /Ascent " + ttf.ascent + " /Descent " + ttf.descent + " /CapHeight " + ttf.capHeight + " /StemV 80 /FontFile2 " + (firstNum + 3) + " 0 R >>" },
+      { stream: null, fontFile: ttf },        // compressed by the caller
+      { stream: new TextEncoder().encode(cmap) },
+    ];
+  }
+
+  async function buildPdf(fontProvider) {
     const model = exportModel();
     const ps = pageSetup();
     const pageW = ps.w / 20, pageH = ps.h / 20;
@@ -2118,6 +2767,42 @@ ${contentHtml()}
     let y = pageH - marginTop;
     const anchors = new Map();        // bookmark / heading id -> { page, y }
 
+    // ---- fonts: embedded (when available) or the standard PDF fonts
+    const embUsed = new Map(), foCache = new Map();
+    function fontFor(family, b, i, mono) {
+      const key = (family || "") + "|" + (b ? 1 : 0) + (i ? 1 : 0) + (mono ? 1 : 0);
+      let fo = foCache.get(key);
+      if (fo) return fo;
+      const sel = fontProvider ? fontProvider.pick(family || "Arial", b, i) : null;
+      if (sel) {
+        let ent = embUsed.get(sel.ttf);
+        if (!ent) { ent = { id: "E" + (embUsed.size + 1), ttf: sel.ttf }; embUsed.set(sel.ttf, ent); }
+        fo = { kind: "emb", id: ent.id, ttf: sel.ttf, synB: sel.synB, synI: sel.synI };
+      } else fo = { kind: "std", b: !!b, mono: !!mono, name: pdfFontName(b, !!i, mono) };
+      foCache.set(key, fo);
+      return fo;
+    }
+    const foWidth = (fo, text, size) => (fo.kind === "emb" ? ttfWidth(fo.ttf, text, size) : textWidth(text, size, fo.mono, fo.b));
+    // PDF operators that show `text` at (x, y); returns the lines to append to the page content
+    function showText(fo, text, size, x, y, col) {
+      const out = ["BT"];
+      if (fo.kind === "emb") {
+        let hex = "";
+        for (const ch of text) {
+          const cp = ch.codePointAt(0), g = fo.ttf.gidOf(cp);
+          if (g) fo.ttf.used.set(g, cp);
+          hex += g.toString(16).toUpperCase().padStart(4, "0");
+        }
+        out.push("/" + fo.id + " " + size + " Tf", col + " rg");
+        if (fo.synB) out.push("2 Tr " + col + " RG " + (size * 0.03).toFixed(2) + " w");
+        out.push(fo.synI ? "1 0 0.2 1 " + x.toFixed(2) + " " + y.toFixed(2) + " Tm" : x.toFixed(2) + " " + y.toFixed(2) + " Td", "<" + hex + "> Tj");
+        if (fo.synB) out.push("0 Tr");
+      } else {
+        out.push("/" + fo.name + " " + size + " Tf", col + " rg", x.toFixed(2) + " " + y.toFixed(2) + " Td", "(" + pdfEscape(text) + ") Tj");
+      }
+      out.push("ET");
+      return out;
+    }
     const newPage = () => { pages.push({ content, annots }); content = []; annots = []; y = pageH - marginTop; };
     const ensureSpace = (h) => { if (y - h < marginBottom) newPage(); };
 
@@ -2128,11 +2813,13 @@ ${contentHtml()}
       for (const r of runs) {
         if (r.br) { tokens.push({ br: true }); continue; }
         if (r.anchor) { tokens.push({ anchor: r.anchor, text: "", w: 0, size: baseSize }); continue; }
-        const st = { b: !!r.b, i: !!r.i, u: !!r.u, s: !!r.s, color: r.color || "", bg: r.bg || "", link: r.link || "", size: r.size || baseSize, mono: isMono(p, r) };
+        const mono = isMono(p, r);
+        const fam = p && p.code && !/courier|mono|consolas/i.test(r.font || "") ? "Courier New" : (r.font || "Arial");
+        const st = { b: !!r.b, i: !!r.i, u: !!r.u, s: !!r.s, color: r.color || "", bg: r.bg || "", link: r.link || "", size: r.size || baseSize, mono, fo: fontFor(fam, !!r.b, !!r.i, mono) };
         const parts = (r.text || "").split(" ");
         parts.forEach((word, i) => {
-          if (i > 0) tokens.push({ ...st, text: " ", w: textWidth(" ", st.size, st.mono, st.b) });
-          if (word) tokens.push({ ...st, text: word, w: textWidth(word, st.size, st.mono, st.b) });
+          if (i > 0) tokens.push({ ...st, text: " ", w: foWidth(st.fo, " ", st.size) });
+          if (word) tokens.push({ ...st, text: word, w: foWidth(st.fo, word, st.size) });
         });
       }
       return tokens;
@@ -2150,7 +2837,7 @@ ${contentHtml()}
       if (line.length) lines.push(line);
       return lines;
     }
-    const sameStyle = (a, b) => a.b === b.b && a.i === b.i && a.u === b.u && a.s === b.s && a.color === b.color && a.bg === b.bg && a.link === b.link && a.size === b.size && a.mono === b.mono;
+    const sameStyle = (a, b) => a.b === b.b && a.i === b.i && a.u === b.u && a.s === b.s && a.color === b.color && a.bg === b.bg && a.link === b.link && a.size === b.size && a.fo === b.fo;
     function mergeTokens(line) {
       const segs = [];
       for (const t of line) {
@@ -2168,7 +2855,7 @@ ${contentHtml()}
         if (!sg.text) continue;
         const col = sg.link ? pdfColor("1155CC") : (sg.color ? pdfColor(sg.color) : "0 0 0");
         if (sg.bg) content.push(pdfColor(sg.bg) + " rg " + x.toFixed(2) + " " + (yy - sg.size * 0.22).toFixed(2) + " " + sg.w.toFixed(2) + " " + (sg.size * 1.15).toFixed(2) + " re f");
-        content.push("BT", "/" + pdfFontName(sg.b, sg.i, sg.mono) + " " + sg.size + " Tf", col + " rg", x.toFixed(2) + " " + yy.toFixed(2) + " Td", "(" + pdfEscape(sg.text) + ") Tj", "ET");
+        content.push(...showText(sg.fo, sg.text, sg.size, x, yy, col));
         if (sg.u || sg.link) content.push(col + " RG 0.6 w " + x.toFixed(2) + " " + (yy - 1.6).toFixed(2) + " m " + (x + sg.w).toFixed(2) + " " + (yy - 1.6).toFixed(2) + " l S");
         if (sg.s) content.push(col + " RG 0.6 w " + x.toFixed(2) + " " + (yy + sg.size * 0.3).toFixed(2) + " m " + (x + sg.w).toFixed(2) + " " + (yy + sg.size * 0.3).toFixed(2) + " l S");
         if (sg.link) annots.push({ rect: [x, yy - sg.size * 0.22, x + sg.w, yy + sg.size * 0.9], link: sg.link });
@@ -2189,7 +2876,7 @@ ${contentHtml()}
       let tokens = tokenize(p.runs || [], p, baseSize);
       if (p.list) {
         const marker = p.list.ordered ? p.list.index + "." : "\u2022";
-        tokens.unshift({ text: marker, w: textWidth(marker, baseSize), size: baseSize, b: false, i: false, u: false, s: false, color: "", bg: "", link: "", mono: false, marker: true });
+        tokens.unshift({ text: marker, w: foWidth(fontFor("Arial", false, false, false), marker, baseSize), size: baseSize, b: false, i: false, u: false, s: false, color: "", bg: "", link: "", mono: false, marker: true, fo: fontFor("Arial", false, false, false) });
       }
       (p.anchors || []).forEach((id) => tokens.unshift({ anchor: id, text: "", w: 0, size: baseSize }));
       const lines = wrapTokens(tokens, availW + hang, 0);
@@ -2262,6 +2949,25 @@ ${contentHtml()}
     }
     pages.push({ content, annots });
 
+    // ---- header, footer and page numbers on every page
+    {
+      const L = docLayout();
+      const zones = [["top", hfSegments("top"), pageH - marginTop / 2 + 3], ["bottom", hfSegments("bottom"), marginBottom / 2 - 3]];
+      pages.forEach((pg, idx) => {
+        if (L.skipFirst && idx === 0) return;
+        zones.forEach(([, segs, base]) => {
+          if (hfEmpty(segs)) return;
+          ["l", "c", "r"].forEach((z) => {
+            const txt = hfText(segs[z], idx + 1, pages.length);
+            if (!txt) return;
+            const size = 9, fo = fontFor("Arial", false, false, false), w = foWidth(fo, txt, size);
+            const x = z === "l" ? marginLeft : z === "r" ? marginLeft + usableW - w : marginLeft + (usableW - w) / 2;
+            pg.content.push(...showText(fo, txt, size, x, base, "0.35 0.35 0.35"));
+          });
+        });
+      });
+    }
+
     // ---- assemble the file
     const enc = new TextEncoder();
     const N = pages.length;
@@ -2287,10 +2993,13 @@ ${contentHtml()}
       return refs;
     });
 
+    const embList = Array.from(embUsed.values());      // embedded fonts: 5 objects each, after the annotations
+    const embBase = nextObj;
     const objs = [];                                  // { dict, stream? } in object-number order
     objs.push({ dict: "<< /Type /Catalog /Pages 2 0 R >>" });
     objs.push({ dict: "<< /Type /Pages /Kids [" + pages.map((_, i) => (3 + i) + " 0 R").join(" ") + "] /Count " + N + " >>" });
-    const fontRes = FONTS.map(([, nm], i) => "/" + nm + " " + fontObj(i) + " 0 R").join(" ");
+    const fontRes = FONTS.map(([, nm], i) => "/" + nm + " " + fontObj(i) + " 0 R").join(" ") +
+      embList.map((e, k) => " /" + e.id + " " + (embBase + 5 * k) + " 0 R").join("");
     pages.forEach((_, i) => {
       const an = pageAnnotRefs[i].length ? " /Annots [" + pageAnnotRefs[i].join(" ") + "]" : "";
       objs.push({ dict: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageW + " " + pageH + "] /Resources << /Font << " + fontRes + " >> >> /Contents " + contentObj(i) + " 0 R" + an + " >>" });
@@ -2298,6 +3007,13 @@ ${contentHtml()}
     FONTS.forEach(([base]) => objs.push({ dict: "<< /Type /Font /Subtype /Type1 /BaseFont /" + base + " /Encoding /WinAnsiEncoding >>" }));
     pages.forEach((pg) => objs.push({ stream: pdfBytes(pg.content.join("\n")) }));
     annotObjs.forEach((d) => objs.push({ dict: d }));
+    for (let k = 0; k < embList.length; k++) {
+      const parts5 = embeddedFontObjects(embList[k], embBase + 5 * k);
+      const ff = parts5.find((o) => o.fontFile);
+      const comp = await deflateBytes(new Uint8Array(ff.fontFile.buf));
+      ff.stream = comp; ff.extra = " /Filter /FlateDecode /Length1 " + ff.fontFile.buf.byteLength;
+      parts5.forEach((o) => objs.push(o));
+    }
 
     const header = enc.encode("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
     const parts = [header];
@@ -2306,7 +3022,7 @@ ${contentHtml()}
     objs.forEach((o, i) => {
       offsets.push(offset);
       if (o.stream) {
-        const head = enc.encode((i + 1) + " 0 obj\n<< /Length " + o.stream.length + " >>\nstream\n");
+        const head = enc.encode((i + 1) + " 0 obj\n<< /Length " + o.stream.length + (o.extra || "") + " >>\nstream\n");
         const tail = enc.encode("\nendstream\nendobj\n");
         parts.push(head, o.stream, tail);
         offset += head.length + o.stream.length + tail.length;
@@ -2321,11 +3037,20 @@ ${contentHtml()}
     return new Blob([...parts, xref, trailer], { type: "application/pdf" });
   }
 
-  function doExportPdf() {
+  async function doExportPdf() {
     if (!hasOpenDoc()) return;
     try {
-      downloadBlob(buildPdf(), exportName("pdf"));
-      showToast("Exported as PDF");
+      const lf = await localFontList();      // first await: the permission prompt needs the click that started the export
+      let provider = null;
+      if (lf.list) { try { provider = await buildFontProvider(lf.list, exportModel()); } catch (e) { provider = null; } }
+      let blob;
+      try { blob = await buildPdf(provider); }
+      catch (e) { if (!provider) throw e; blob = await buildPdf(null); provider = null; }   // embedding failed: standard fonts
+      downloadBlob(blob, exportName("pdf"));
+      if (provider) showToast("Exported as PDF with embedded fonts");
+      else if (lf.reason === "unsupported") showToast("Exported as PDF with standard fonts (font embedding needs Chrome or Edge)");
+      else if (lf.reason === "denied") showToast("Exported as PDF with standard fonts: allow access to local fonts to embed yours");
+      else showToast("Exported as PDF (your fonts were not found on this computer: standard fonts used)");
     } catch (e) {
       showToast("PDF export failed");
     }
@@ -2339,6 +3064,8 @@ ${contentHtml()}
       title: d.title || "",
       tags: d.tags || [],
       favorite: !!d.favorite,
+      collection: d.collection || "",
+      layout: d.layout || {},
       content: html,
       page: JSON.parse(LS.get("docly-page", "{}")),
       createdAt: d.createdAt || null,
@@ -2366,24 +3093,379 @@ ${contentHtml()}
     showToast("Backup (JSON) downloaded");
   }
 
-  async function doImportJson(file) {
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (!data || typeof data.content !== "string") { showToast("Invalid Docly JSON file"); return; }
-      const title = data.title || file.name.replace(/\.json$/i, "") || "Imported document";
-      const created = await api("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        title, type: "note", content: data.content, tags: data.tags || [], favorite: !!data.favorite,
-        createdAt: data.createdAt || undefined, updatedAt: data.updatedAt || undefined,
-      }) });
-      if (data.page && typeof data.page === "object") LS.set("docly-page", JSON.stringify(data.page));
-      showToast("Document imported");
-      await loadDocuments();
-      await openDocument(created.id);
-    } catch (e) {
-      showToast("Import failed: " + (e.message || "unknown error"));
+  /* ---------------- Import: Word (.docx), Markdown, text, HTML, Docly JSON, ZIP ---------------- */
+  const IMPORT_EXT = /\.(json|docx|md|markdown|txt|html?|zip)$/i;
+
+  // --- minimal ZIP reader (central directory + DecompressionStream for "deflate")
+  async function readZip(buf) {
+    const u8 = new Uint8Array(buf), dv = new DataView(buf);
+    let e = u8.length - 22;
+    while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--;
+    if (e < 0) throw new Error("not a valid ZIP file");
+    const count = dv.getUint16(e + 10, true);
+    let p = dv.getUint32(e + 16, true);
+    const entries = new Map();
+    for (let i = 0; i < count; i++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) break;
+      const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+      const name = new TextDecoder().decode(u8.subarray(p + 46, p + 46 + nlen));
+      entries.set(name, { method: dv.getUint16(p + 10, true), csize: dv.getUint32(p + 20, true), lho: dv.getUint32(p + 42, true) });
+      p += 46 + nlen + xlen + clen;
     }
+    return {
+      names: Array.from(entries.keys()),
+      async read(name) {
+        const en = entries.get(name);
+        if (!en) return null;
+        const start = en.lho + 30 + dv.getUint16(en.lho + 26, true) + dv.getUint16(en.lho + 28, true);
+        const raw = u8.subarray(start, start + en.csize);
+        if (en.method === 0) return raw;
+        if (en.method !== 8) throw new Error("unsupported ZIP compression");
+        const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+      },
+    };
   }
+
+  // --- plain text
+  function textToHtml(text) {
+    const out = [];
+    let blank = false;
+    text.replace(/\r\n?/g, "\n").split("\n").forEach((l) => {
+      if (!l.trim()) { if (!blank && out.length) out.push("<p><br></p>"); blank = true; }
+      else { out.push("<p>" + escapeHtml(l.replace(/\t/g, "    ")) + "</p>"); blank = false; }
+    });
+    return out.join("") || "<p><br></p>";
+  }
+
+  // --- Markdown
+  function mdInline(src) {
+    const codes = [];
+    let t = src.replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return "\u0000" + (codes.length - 1) + "\u0000"; });
+    t = escapeHtml(t);
+    t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1");                                   // images are not supported: keep the alt text
+    t = t.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_, txt, url) => /^\s*javascript:/i.test(url) ? txt : '<a href="' + url + '">' + txt + "</a>");
+    t = t.replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g, '<a href="$1">$1</a>');
+    t = t.replace(/\*\*\*([^*]+)\*\*\*/g, "<b><i>$1</i></b>")
+      .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/__([^_]+)__/g, "<b>$1</b>")
+      .replace(/(^|[^*\w])\*([^*\s][^*]*)\*(?!\*)/g, "$1<i>$2</i>").replace(/(^|[^_\w])_([^_\s][^_]*)_(?![_\w])/g, "$1<i>$2</i>")
+      .replace(/~~([^~]+)~~/g, "<s>$1</s>");
+    t = t.replace(/\\([\\`*_{}\[\]()#+\-.!|>])/g, "$1");
+    return t.replace(/\u0000(\d+)\u0000/g, (_, i) => "<code>" + escapeHtml(codes[+i]) + "</code>");
+  }
+  function markdownToHtml(md) {
+    const lines = md.replace(/\r\n?/g, "\n").replace(/^\uFEFF/, "").split("\n");
+    const out = [];
+    let i = 0;
+    const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l || "");
+    const cells = (l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+    const itemRe = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!line.trim()) { i++; continue; }
+      let m;
+      if ((m = line.match(/^\s*(```|~~~)/))) {                                  // fenced code
+        const fence = m[1]; const code = []; i++;
+        while (i < lines.length && !lines[i].trim().startsWith(fence)) code.push(lines[i++]);
+        i++; out.push("<pre>" + escapeHtml(code.join("\n")) + "</pre>"); continue;
+      }
+      if ((m = line.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/))) { out.push("<h" + m[1].length + ">" + mdInline(m[2]) + "</h" + m[1].length + ">"); i++; continue; }
+      if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) { out.push("<hr>"); i++; continue; }
+      if (/^\s*>/.test(line)) {
+        const q = [];
+        while (i < lines.length && /^\s*>/.test(lines[i])) q.push(lines[i++].replace(/^\s*>\s?/, ""));
+        out.push("<blockquote>" + markdownToHtml(q.join("\n")) + "</blockquote>"); continue;
+      }
+      if (line.includes("|") && isTableSep(lines[i + 1])) {
+        const head = cells(line); i += 2; const rows = [];
+        while (i < lines.length && lines[i].trim() && lines[i].includes("|")) rows.push(cells(lines[i++]));
+        out.push("<table><tbody><tr>" + head.map((c) => "<td><b>" + mdInline(c) + "</b></td>").join("") + "</tr>" +
+          rows.map((r) => "<tr>" + head.map((_, k) => "<td>" + mdInline(r[k] || "") + "</td>").join("") + "</tr>").join("") + "</tbody></table>");
+        continue;
+      }
+      if (itemRe.test(line)) {                                                   // lists (nested by indentation)
+        const stack = []; let html = "", task = false, first = true;
+        const close = (n) => { while (stack.length > n) { html += "</li></" + stack.pop().tag + ">"; } };
+        while (i < lines.length && (itemRe.test(lines[i]) || (lines[i].trim() && /^\s{2,}\S/.test(lines[i]) && stack.length))) {
+          const im = lines[i].match(itemRe);
+          if (!im) { html += " " + mdInline(lines[i].trim()); i++; continue; }
+          const indent = im[1].replace(/\t/g, "    ").length, tag = /\d/.test(im[2]) ? "ol" : "ul";
+          let body = im[3], done = null;
+          const tk = body.match(/^\[([ xX])\]\s+(.*)$/);
+          if (tk) { done = tk[1] !== " "; body = tk[2]; if (first) task = true; }
+          first = false;
+          while (stack.length && stack[stack.length - 1].indent > indent) close(stack.length - 1);
+          if (stack.length && stack[stack.length - 1].indent === indent) {
+            if (stack[stack.length - 1].tag !== tag) { close(stack.length - 1); html += "<" + tag + "><li" + (done ? ' class="done"' : "") + ">"; stack.push({ tag, indent }); }
+            else html += "</li><li" + (done ? ' class="done"' : "") + ">";
+          } else { html += "<" + tag + "><li" + (done ? ' class="done"' : "") + ">"; stack.push({ tag, indent }); }
+          html += mdInline(body); i++;
+        }
+        close(0);
+        out.push(task ? html.replace(/^<ul>/, '<ul class="checklist">') : html); continue;
+      }
+      const para = [];
+      while (i < lines.length && lines[i].trim() && !/^\s{0,3}(#{1,6}\s|```|~~~|>)/.test(lines[i]) && !itemRe.test(lines[i]) && !/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(lines[i]) && !(lines[i].includes("|") && isTableSep(lines[i + 1]))) para.push(lines[i++]);
+      out.push("<p>" + para.map((l, k) => mdInline(l.trim()) + (/ {2,}$/.test(l) && k < para.length - 1 ? "<br>" : "")).join(" ").replace(/<br> /g, "<br>") + "</p>");
+    }
+    return out.join("") || "<p><br></p>";
+  }
+
+  // --- HTML: keep structure and basic formatting, drop scripts, images, classes and fonts
+  function htmlToDoc(html) {
+    const d = new DOMParser().parseFromString(html, "text/html");
+    const title = (d.title || "").trim();
+    d.querySelectorAll("script,style,img,picture,svg,video,audio,canvas,iframe,object,embed,meta,link,title,noscript,form,input,button,select,textarea,nav,header,footer").forEach((n) => n.remove());
+    const KEEP = new Set(["color", "background-color", "font-weight", "font-style", "text-decoration", "text-align", "font-size"]);
+    d.body.querySelectorAll("*").forEach((n) => {
+      Array.from(n.attributes).forEach((a) => {
+        const nm = a.name.toLowerCase();
+        if (nm === "href") { if (/^\s*javascript:/i.test(a.value)) n.removeAttribute(nm); }
+        else if (nm === "colspan" || nm === "rowspan" || nm === "id") { /* keep */ }
+        else if (nm === "style") {
+          const keep = [];
+          for (let k = 0; k < n.style.length; k++) { const prop = n.style[k]; if (KEEP.has(prop)) keep.push(prop + ":" + n.style.getPropertyValue(prop)); }
+          if (keep.length) n.setAttribute("style", keep.join(";")); else n.removeAttribute("style");
+        } else if (nm === "class" && /^(page-break|checklist|done|doc-title|doc-subtitle)$/.test(a.value)) { /* keep */ }
+        else n.removeAttribute(nm);
+      });
+    });
+    // loose text / inline content directly in <body> gets its own paragraph
+    const blockish = /^(P|DIV|H[1-6]|UL|OL|TABLE|HR|PRE|BLOCKQUOTE|SECTION|ARTICLE|MAIN|ASIDE|FIGURE|DL|ADDRESS|DETAILS)$/;
+    let run = [];
+    const flush = () => { if (run.length && !run.every((n) => n.nodeType === 3 && !n.nodeValue.trim())) { const p = d.createElement("p"); run[0].parentNode.insertBefore(p, run[0]); run.forEach((n) => p.appendChild(n)); } run = []; };
+    Array.from(d.body.childNodes).forEach((n) => { if (n.nodeType === 1 && blockish.test(n.tagName)) flush(); else run.push(n); });
+    flush();
+    return { title, content: d.body.innerHTML.trim() || "<p><br></p>" };
+  }
+
+  // --- Word (.docx)
+  const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const HILITE = { yellow: "#ffff00", green: "#00ff00", cyan: "#00ffff", magenta: "#ff00ff", blue: "#0000ff", red: "#ff0000", darkBlue: "#000080", darkCyan: "#008080", darkGreen: "#008000", darkMagenta: "#800080", darkRed: "#800000", darkYellow: "#808000", darkGray: "#808080", lightGray: "#c0c0c0", black: "#000000" };
+  async function docxToHtml(buf) {
+    const zip = await readZip(buf);
+    const readText = async (n) => { const x = await zip.read(n); return x ? new TextDecoder().decode(x) : ""; };
+    const xml = (s) => new DOMParser().parseFromString(s, "application/xml");
+    const mainSrc = await readText("word/document.xml");
+    if (!mainSrc) throw new Error("not a Word document");
+    const main = xml(mainSrc);
+    const ch = (n, name) => (n ? Array.from(n.childNodes).filter((c) => c.nodeType === 1 && c.localName === name) : []);
+    const at = (n, name) => (n ? n.getAttributeNS(W_NS, name) || n.getAttribute("w:" + name) || "" : "");
+    const onoff = (pr, name) => { const e = ch(pr, name)[0]; if (!e) return false; const v = at(e, "val"); return !(v === "0" || v === "false" || v === "off"); };
+
+    // relationships (links), styles (headings) and numbering (bullet / numbered)
+    const links = {};
+    Array.from(xml(await readText("word/_rels/document.xml.rels")).getElementsByTagName("Relationship")).forEach((r) => { links[r.getAttribute("Id")] = r.getAttribute("Target"); });
+    const styles = {};
+    Array.from(xml(await readText("word/styles.xml")).getElementsByTagNameNS(W_NS, "style")).forEach((st) => {
+      const nm = ch(st, "name")[0], bo = ch(st, "basedOn")[0];
+      const sp = ch(st, "pPr")[0], snp = sp && ch(sp, "numPr")[0];
+      const sid = snp ? at(ch(snp, "numId")[0], "val") : "";
+      styles[at(st, "styleId")] = { name: (nm ? at(nm, "val") : "").toLowerCase(), base: bo ? at(bo, "val") : "", num: sid && sid !== "0" ? sid : "", lvl: snp ? +at(ch(snp, "ilvl")[0], "val") || 0 : 0 };
+    });
+    const numXml = xml(await readText("word/numbering.xml"));
+    const abstractFmt = {}, numToAbstract = {};
+    Array.from(numXml.getElementsByTagNameNS(W_NS, "abstractNum")).forEach((a) => {
+      const f = {}; ch(a, "lvl").forEach((l) => { const nf = ch(l, "numFmt")[0]; f[at(l, "ilvl")] = nf ? at(nf, "val") : "decimal"; });
+      abstractFmt[at(a, "abstractNumId")] = f;
+    });
+    Array.from(numXml.getElementsByTagNameNS(W_NS, "num")).forEach((n) => { const a = ch(n, "abstractNumId")[0]; if (a) numToAbstract[at(n, "numId")] = at(a, "val"); });
+    const listTag = (numId, lvl) => { const f = (abstractFmt[numToAbstract[numId]] || {})[lvl] || "decimal"; return f === "bullet" || f === "none" ? "ul" : "ol"; };
+    const styleKind = (id) => {
+      for (let k = 0; id && k < 6; k++) {
+        const st = styles[id]; if (!st) break;
+        let m = st.name.match(/^heading\s*([1-6])$/); if (m) return "h" + m[1];
+        if (st.name === "title") return "title"; if (st.name === "subtitle") return "subtitle";
+        if (/^(quote|intense quote)$/.test(st.name)) return "quote";
+        id = st.base;
+      }
+      const m = /^Heading([1-6])$/.exec(id || ""); return m ? "h" + m[1] : "";
+    };
+    const knownFonts = new Set(Array.from(el("fontFamilySelect").options).map((o) => o.value.toLowerCase()));
+
+    const runHtml = (r) => {
+      const pr = ch(r, "rPr")[0];
+      const css = [];
+      let b = false, i = false, u = false, s = false, sup = false, sub = false;
+      if (pr) {
+        b = onoff(pr, "b"); i = onoff(pr, "i"); s = onoff(pr, "strike") || onoff(pr, "dstrike");
+        const ue = ch(pr, "u")[0]; u = !!ue && at(ue, "val") !== "none";
+        const va = at(ch(pr, "vertAlign")[0], "val"); sup = va === "superscript"; sub = va === "subscript";
+        const col = at(ch(pr, "color")[0], "val"); if (/^[0-9a-f]{6}$/i.test(col) && col !== "000000") css.push("color:#" + col);
+        const sz = at(ch(pr, "sz")[0], "val"); if (/^\d+$/.test(sz)) css.push("font-size:" + (+sz / 2) + "pt");
+        const fn = at(ch(pr, "rFonts")[0], "ascii"); if (fn && knownFonts.has(fn.toLowerCase())) css.push("font-family:" + cssFontName(fn));
+        const hl = at(ch(pr, "highlight")[0], "val"); if (HILITE[hl]) css.push("background-color:" + HILITE[hl]);
+        const shd = at(ch(pr, "shd")[0], "fill"); if (/^[0-9a-f]{6}$/i.test(shd)) css.push("background-color:#" + shd);
+        if (onoff(pr, "smallCaps")) css.push("font-variant:small-caps");
+        if (onoff(pr, "caps")) css.push("text-transform:uppercase");
+      }
+      let inner = "", pageBreak = false;
+      Array.from(r.childNodes).forEach((c) => {
+        if (c.nodeType !== 1) return;
+        switch (c.localName) {
+          case "t": inner += escapeHtml(c.textContent); break;
+          case "tab": inner += "\u00a0\u00a0\u00a0\u00a0"; break;
+          case "br": if (at(c, "type") === "page") pageBreak = true; else inner += "<br>"; break;
+          case "cr": inner += "<br>"; break;
+          case "noBreakHyphen": inner += "-"; break;
+          case "softHyphen": break;
+          default: break;
+        }
+      });
+      if (!inner) return { html: "", pageBreak };
+      if (sub) inner = "<sub>" + inner + "</sub>"; if (sup) inner = "<sup>" + inner + "</sup>";
+      if (s) inner = "<s>" + inner + "</s>"; if (u) inner = "<u>" + inner + "</u>";
+      if (i) inner = "<i>" + inner + "</i>"; if (b) inner = "<b>" + inner + "</b>";
+      if (css.length) inner = '<span style="' + css.join(";") + '">' + inner + "</span>";
+      return { html: inner, pageBreak };
+    };
+    const inlineOf = (node, state) => {
+      let html = "";
+      Array.from(node.childNodes).forEach((c) => {
+        if (c.nodeType !== 1) return;
+        const n = c.localName;
+        if (n === "r") { const x = runHtml(c); html += x.html; if (x.pageBreak) state.pageBreak = true; }
+        else if (n === "hyperlink") {
+          const href = links[c.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id") || c.getAttribute("r:id")] || (at(c, "anchor") ? "#" + at(c, "anchor") : "");
+          const inner = inlineOf(c, state);
+          html += href && !/^\s*javascript:/i.test(href) ? '<a href="' + escapeHtml(href) + '">' + inner + "</a>" : inner;
+        } else if (n === "ins" || n === "smartTag" || n === "sdt" || n === "sdtContent" || n === "fldSimple" || n === "customXml") html += inlineOf(c, state);
+      });
+      return html;
+    };
+    const paraInfo = (p) => {
+      const pr = ch(p, "pPr")[0];
+      const info = { kind: "", num: null, lvl: 0, align: "", breakBefore: false };
+      if (pr) {
+        info.kind = styleKind(at(ch(pr, "pStyle")[0], "val"));
+        const np = ch(pr, "numPr")[0];
+        if (np) { const id = at(ch(np, "numId")[0], "val"); if (id && id !== "0") { info.num = id; info.lvl = +at(ch(np, "ilvl")[0], "val") || 0; } }
+        else {                                   // list defined by the paragraph style (e.g. "List Bullet")
+          let sid = at(ch(pr, "pStyle")[0], "val");
+          for (let k = 0; sid && k < 6; k++) { const st = styles[sid]; if (!st) break; if (st.num) { info.num = st.num; info.lvl = st.lvl; break; } sid = st.base; }
+        }
+        const jc = at(ch(pr, "jc")[0], "val");
+        info.align = { center: "center", right: "right", end: "right", both: "justify", distribute: "justify" }[jc] || "";
+        info.breakBefore = onoff(pr, "pageBreakBefore");
+      }
+      return info;
+    };
+
+    const out = [];
+    let stack = [];   // open lists: { tag, lvl }
+    const closeLists = (toDepth) => { while (stack.length > toDepth) out.push("</li></" + stack.pop().tag + ">"); };
+    const blockHtml = (info, inner) => {
+      const al = info.align ? ' style="text-align:' + info.align + '"' : "";
+      const content = inner || "<br>";
+      switch (info.kind) {
+        case "title": return '<p class="doc-title"' + al + ">" + content + "</p>";
+        case "subtitle": return '<p class="doc-subtitle"' + al + ">" + content + "</p>";
+        case "quote": return "<blockquote" + al + ">" + content + "</blockquote>";
+        default: return /^h[1-6]$/.test(info.kind) ? "<" + info.kind + al + ">" + content + "</" + info.kind + ">" : "<p" + al + ">" + content + "</p>";
+      }
+    };
+    const handlePara = (p) => {
+      const info = paraInfo(p), st = { pageBreak: false };
+      const inner = inlineOf(p, st);
+      if (info.breakBefore) { closeLists(0); out.push('<hr class="page-break">'); }
+      if (info.num) {
+        const tag = listTag(info.num, String(info.lvl));
+        while (stack.length && stack[stack.length - 1].lvl > info.lvl) out.push("</li></" + stack.pop().tag + ">");
+        const top = stack[stack.length - 1];
+        if (top && top.lvl === info.lvl && top.tag !== tag) { out.push("</li></" + stack.pop().tag + ">"); }
+        const top2 = stack[stack.length - 1];
+        if (top2 && top2.lvl === info.lvl) out.push("</li><li>" + inner);
+        else { out.push("<" + tag + "><li>" + inner); stack.push({ tag, lvl: info.lvl }); }
+      } else {
+        closeLists(0);
+        out.push(blockHtml(info, inner));
+      }
+      if (st.pageBreak) { closeLists(0); out.push('<hr class="page-break">'); }
+    };
+    const handleTable = (tbl) => {
+      closeLists(0);
+      const rows = ch(tbl, "tr"), grid = [];
+      rows.forEach((tr, ri) => {
+        let col = 0; grid[ri] = [];
+        ch(tr, "tc").forEach((tc) => {
+          const pr = ch(tc, "tcPr")[0], gs = pr && ch(pr, "gridSpan")[0], vm = pr && ch(pr, "vMerge")[0];
+          const span = gs ? +at(gs, "val") || 1 : 1;
+          grid[ri].push({ tc, col, span, vm: vm ? at(vm, "val") || "continue" : null, fill: pr ? at(ch(pr, "shd")[0], "fill") : "" });
+          col += span;
+        });
+      });
+      let html = "<table><tbody>";
+      grid.forEach((cells, ri) => {
+        html += "<tr>";
+        cells.forEach((c) => {
+          if (c.vm === "continue") return;
+          let rowspan = 1;
+          if (c.vm === "restart") for (let k = ri + 1; k < grid.length; k++) { if (grid[k].some((x) => x.col === c.col && x.vm === "continue")) rowspan++; else break; }
+          const paras = ch(c.tc, "p").map((p) => inlineOf(p, { pageBreak: false })).filter((x, k, arr) => x || k < arr.length - 1);
+          const attrs = (c.span > 1 ? ' colspan="' + c.span + '"' : "") + (rowspan > 1 ? ' rowspan="' + rowspan + '"' : "") + (/^[0-9a-f]{6}$/i.test(c.fill) ? ' style="background-color:#' + c.fill + '"' : "");
+          html += "<td" + attrs + ">" + (paras.join("<br>") || "<br>") + "</td>";
+        });
+        html += "</tr>";
+      });
+      out.push(html + "</tbody></table>");
+    };
+    const walk = (node) => {
+      Array.from(node.childNodes).forEach((c) => {
+        if (c.nodeType !== 1) return;
+        if (c.localName === "p") handlePara(c);
+        else if (c.localName === "tbl") handleTable(c);
+        else if (c.localName === "sdt" || c.localName === "sdtContent") walk(c);
+      });
+    };
+    walk(ch(main.documentElement, "body")[0] || main.documentElement);
+    closeLists(0);
+    return out.join("").replace(/(<hr class="page-break">)+$/, "") || "<p><br></p>";
+  }
+
+  // --- router
+  async function createImported(fields) {
+    return api("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ type: "note" }, fields)) });
+  }
+  async function importOne(name, getText, getBuffer) {
+    const base = name.replace(/^.*[\\/]/, "").replace(/\.[^.]+$/, "") || "Imported document";
+    const ext = (name.match(/\.([^.]+)$/) || [, ""])[1].toLowerCase();
+    if (ext === "json") {
+      const data = JSON.parse(await getText());
+      if (!data || typeof data.content !== "string") throw new Error("not a Docly JSON file");
+      if (data.page && typeof data.page === "object") LS.set("docly-page", JSON.stringify(data.page));
+      return createImported({ title: data.title || base, content: data.content, tags: data.tags || [], favorite: !!data.favorite, collection: data.collection || "", layout: data.layout || {}, createdAt: data.createdAt || undefined, updatedAt: data.updatedAt || undefined });
+    }
+    if (ext === "docx") return createImported({ title: base, content: await docxToHtml(await getBuffer()) });
+    if (ext === "md" || ext === "markdown") return createImported({ title: base, content: markdownToHtml(await getText()) });
+    if (ext === "txt") return createImported({ title: base, content: textToHtml(await getText()) });
+    if (ext === "html" || ext === "htm") { const h = htmlToDoc(await getText()); return createImported({ title: h.title || base, content: h.content }); }
+    throw new Error("unsupported file type");
+  }
+  async function importFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const created = [], failed = [];
+    for (const f of files) {
+      try {
+        if (/\.zip$/i.test(f.name)) {
+          const zip = await readZip(await f.arrayBuffer());
+          for (const n of zip.names) {
+            if (n.endsWith("/") || !IMPORT_EXT.test(n) || /\.zip$/i.test(n) || /^__MACOSX|\/\./.test(n)) continue;
+            try { const bytes = await zip.read(n); created.push(await importOne(n, async () => new TextDecoder().decode(bytes), async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))); }
+            catch (e) { failed.push(n + ": " + e.message); }
+          }
+        } else {
+          created.push(await importOne(f.name, () => f.text(), () => f.arrayBuffer()));
+        }
+      } catch (e) { failed.push(f.name + ": " + (e.message || "error")); }
+    }
+    await loadDocuments();
+    if (failed.length) showToast("Could not import: " + failed.join("; "));
+    else showToast(created.length === 1 ? "Document imported" : created.length + " documents imported");
+    if (created.length === 1 && created[0] && created[0].id && !failed.length) await openDocument(created[0].id);
+  }
+  function openImportPicker() { jsonImportInput.click(); }
+
 
 
   el("codeBtn").addEventListener("click", () => {
@@ -2501,9 +3583,79 @@ ${contentHtml()}
   const fontFamilySelect = el("fontFamilySelect");
   fontFamilySelect.addEventListener("change", () => {
     focusRich();
-    document.execCommand("fontName", false, fontFamilySelect.value);
-    scheduleSave();
+    applyFontFamily(fontFamilySelect.value);
   });
+
+  /* ---- Font change: instant when the whole document is selected (Ctrl+A) ----
+     The browser's own fontName command rewrites every text node and is slow on long documents.
+     When everything is selected we simply set the font on each leaf block and clear fonts set on inner
+     elements: the text nodes are not touched (so the browser's undo history stays valid) and the change
+     has its own small undo / redo. */
+  const FONT_BLOCKS = "p,h1,h2,h3,h4,h5,h6,li,td,th,div,pre,blockquote,dt,dd";
+  const cssFontName = (n) => (/[\s,]/.test(n) ? '"' + n.replace(/"/g, "") + '"' : n);
+  let fastUndo = null, fastRedo = null;
+  function selectionCoversAll() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    const r = sel.getRangeAt(0);
+    if (r.collapsed) return false;
+    const w = document.createTreeWalker(richEditor, NodeFilter.SHOW_TEXT);
+    let first = null, last = null, n;
+    while ((n = w.nextNode())) { if (n.nodeValue.trim()) { if (!first) first = n; last = n; } }
+    if (!first) return false;
+    const i0 = first.nodeValue.length - first.nodeValue.trimStart().length;
+    const i1 = last.nodeValue.trimEnd().length;
+    return r.comparePoint(first, i0) === 0 && r.comparePoint(last, i1) === 0;
+  }
+  function fastSetFont(name) {
+    wrapRootInline();
+    const css = cssFontName(name);
+    const changes = [];   // [element, kind, before, after]
+    richEditor.querySelectorAll("*").forEach((e) => {
+      if (e.tagName === "FONT" && e.hasAttribute("face")) { changes.push([e, "face", e.getAttribute("face"), null]); e.removeAttribute("face"); }
+      if (e.style && e.style.fontFamily) { changes.push([e, "ff", e.style.fontFamily, ""]); e.style.fontFamily = ""; }
+    });
+    richEditor.querySelectorAll(FONT_BLOCKS).forEach((b) => {
+      if (b.querySelector(FONT_BLOCKS)) return;
+      const before = b.style.fontFamily;
+      const prev = changes.find((c) => c[0] === b && c[1] === "ff");
+      if (prev) prev[3] = css; else changes.push([b, "ff", before, css]);
+      b.style.fontFamily = css;
+    });
+    fastUndo = { changes }; fastRedo = null;
+  }
+  function fastApply(changes, useAfter) {
+    changes.forEach(([e, kind, before, after]) => {
+      const v = useAfter ? after : before;
+      if (kind === "face") { if (v == null) e.removeAttribute("face"); else e.setAttribute("face", v); }
+      else e.style.fontFamily = v || "";
+    });
+  }
+  function afterFastChange() {
+    richEditor.dispatchEvent(new Event("input", { bubbles: true }));   // save, minimap, outline…
+    syncToolbar();
+  }
+  function fastUndoNow() {
+    if (!fastUndo) return false;
+    fastApply(fastUndo.changes, false); fastRedo = fastUndo; fastUndo = null; afterFastChange(); return true;
+  }
+  function fastRedoNow() {
+    if (!fastRedo) return false;
+    fastApply(fastRedo.changes, true); fastUndo = fastRedo; fastRedo = null; afterFastChange(); return true;
+  }
+  richEditor.addEventListener("beforeinput", (e) => { if (!/^history/.test(e.inputType)) { fastUndo = null; fastRedo = null; } });
+
+  function applyFontFamily(name) {
+    if (!name) return;
+    if (selectionCoversAll()) {
+      fastSetFont(name);
+      fontFamilySelect.value = name;
+      afterFastChange();
+      return;
+    }
+    document.execCommand("fontName", false, name);
+    scheduleSave();
+  }
   function syncFontFamily() {
     if (!state.currentDoc) return;
     const cur = (document.queryCommandValue("fontName") || "").replace(/["']/g, "").split(",")[0].trim().toLowerCase();
@@ -2522,8 +3674,7 @@ ${contentHtml()}
     const fontName = await showModal("Font", "Font name (e.g. Arial, Calibri, Times New Roman):", "Arial", true);
     if (fontName && fontName !== "") {
       focusRich();
-      document.execCommand("fontName", false, fontName);
-      scheduleSave();
+      applyFontFamily(fontName);
     }
   }
   let clickCount = 0;
@@ -3975,7 +5126,9 @@ ${contentHtml()}
         for (const it of items) {
           if (it.types.includes("text/html")) {
             const html = await (await it.getType("text/html")).text();
-            document.execCommand("insertHTML", false, stripImages(html));
+            let internal = false;
+            if (internalCopy && it.types.includes("text/plain")) internal = normText(await (await it.getType("text/plain")).text()) === internalCopy;
+            document.execCommand("insertHTML", false, internal ? stripImages(html) : cleanPastedHtml(html));
             scheduleSave(); return;
           }
         }
@@ -3985,6 +5138,22 @@ ${contentHtml()}
       scheduleSave();
     } catch (_) { showToast("Use Ctrl+V to paste (the browser blocked clipboard access)"); }
   }
+  // Text copied from other programs (Word, web pages…) keeps its own font, e.g. Comic Sans: drop it so the
+  // document's font is used. Content copied inside Docly keeps the fonts chosen here.
+  let internalCopy = "";
+  const normText = (t) => String(t || "").replace(/\r\n?/g, "\n").trim();
+  const noteInternalCopy = () => { const s2 = window.getSelection(); internalCopy = normText(s2 ? s2.toString() : ""); };
+  richEditor.addEventListener("copy", noteInternalCopy);
+  richEditor.addEventListener("cut", noteInternalCopy);
+  function cleanPastedHtml(html) {
+    const d = document.createElement("div");
+    d.innerHTML = html;
+    d.querySelectorAll("img,picture,svg,video,canvas,script,style,meta,link,title,object,iframe").forEach((n) => n.remove());
+    d.querySelectorAll("[style]").forEach((n) => { n.style.removeProperty("font-family"); if (!n.getAttribute("style")) n.removeAttribute("style"); });
+    d.querySelectorAll("font[face]").forEach((n) => n.removeAttribute("face"));
+    d.querySelectorAll("[class]").forEach((n) => n.removeAttribute("class"));
+    return d.innerHTML;
+  }
   function stripImages(html) { const d = document.createElement("div"); d.innerHTML = html; d.querySelectorAll("img,picture,svg,video,canvas,script,style").forEach((n) => n.remove()); return d.innerHTML; }
   richEditor.addEventListener("paste", (e) => {
     const cd = e.clipboardData;
@@ -3993,7 +5162,14 @@ ${contentHtml()}
     const pastedHref = urlFromText(plainTxt);
     if (pastedHref && !(activeElement() && activeElement().closest && activeElement().closest("a"))) { e.preventDefault(); pasteAsLink(plainTxt, pastedHref); return; }
     const html = cd.getData("text/html");
-    if (html && /<img|<picture|<svg/i.test(html)) {
+    const isInternal = !!internalCopy && normText(cd.getData("text/plain")) === internalCopy;
+    if (html && !isInternal) {
+      e.preventDefault();
+      const cleaned = cleanPastedHtml(html);
+      if (cleaned.trim()) document.execCommand("insertHTML", false, cleaned);
+      else document.execCommand("insertText", false, cd.getData("text/plain"));
+      scheduleSave();
+    } else if (html && /<img|<picture|<svg/i.test(html)) {
       e.preventDefault();
       const cleaned = stripImages(html);
       if (cleaned.trim()) document.execCommand("insertHTML", false, cleaned);
@@ -4276,7 +5452,7 @@ ${contentHtml()}
     const px = (v) => Math.max(0, Math.min(300, parseFloat(v) || 0)) / 2.54 * 96 + "px";
     richEditor.style.paddingTop = px(res.top); richEditor.style.paddingBottom = px(res.bottom);
     richEditor.style.paddingLeft = px(res.left); richEditor.style.paddingRight = px(res.right);
-    saveMargins(); applyPage(); rafRender(); mmRefresh();
+    saveMargins(); applyPage(); rafRender(); mmRefresh(); renderHeaderFooter(); applyPrintHF();
   }
   const PAPER_IN = { letter: [8.5, 11], a4: [8.2677, 11.6929], legal: [8.5, 14] };
   function applyPage() {
@@ -4286,6 +5462,7 @@ ${contentHtml()}
     pageArea.style.width = Math.round(w * 96) + "px";
     richEditor.style.minHeight = Math.round(h * 96) + "px";
     if (cur.color && cur.color.toLowerCase() !== "#ffffff") richEditor.style.background = cur.color; else richEditor.style.background = "";
+    if (typeof renderHeaderFooter === "function") { renderHeaderFooter(); applyPrintHF(); }
   }
   window.__pagePaper = () => {
     const cur = JSON.parse(LS.get("docly-page", "{}"));
@@ -4445,7 +5622,7 @@ SOFTWARE.`;
     ["Text formatting", [
       ["Bold", "Ctrl+B"], ["Italic", "Ctrl+I"], ["Underline", "Ctrl+U"], ["Strikethrough", "Alt+Shift+5"],
       ["Superscript", "Ctrl+."], ["Subscript", "Ctrl+,"], ["Increase font size", "Ctrl+Shift+."], ["Decrease font size", "Ctrl+Shift+,"],
-      ["Clear formatting", "Ctrl+\\"], ["Copy text formatting", "Ctrl+Alt+C"], ["Paste text formatting", "Ctrl+Alt+V"],
+      ["Clear formatting", "Ctrl+\\"], ["Copy text formatting", "Ctrl+Alt+C"], ["Paste text formatting", "Ctrl+Alt+V"], ["Insert footnote", "Ctrl+Alt+F"],
       ["Cycle capitalization", "Shift+F3"],
     ]],
     ["Paragraph formatting", [
@@ -4521,6 +5698,10 @@ SOFTWARE.`;
     if (key === "F1") { stop(); openHelpMenu(); return; }
     const typing = ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName);
     if (typing && !(mod && ["KeyS", "KeyN", "KeyP", "KeyO", "Slash"].includes(code))) return;
+    if (mod && !e.altKey && inEd) {
+      if (code === "KeyZ" && !e.shiftKey && fastUndoNow()) { stop(); return; }
+      if ((code === "KeyY" || (code === "KeyZ" && e.shiftKey)) && fastRedoNow()) { stop(); return; }
+    }
 
     // ---- alt+shift: menu bar
     if (e.altKey && e.shiftKey && !mod) {
@@ -4558,6 +5739,7 @@ SOFTWARE.`;
     if (e.altKey && !e.shiftKey) {
       if (/^Digit[0-6]$/.test(code) && inEd) { edit(() => applyBlockStyle(code === "Digit0" ? "P" : "H" + code[5])); return; }
       if (code === "KeyC" && inEd) { stop(); copyFormatting(); return; }
+      if (code === "KeyF" && inEd) { stop(); insertFootnote(); return; }
       if (code === "KeyV" && inEd) { edit(pasteFormatting); return; }
       return;
     }
@@ -4669,6 +5851,8 @@ SOFTWARE.`;
       { label: "Rename", run: renameDoc },
       { label: "Add / remove favorite", run: needDoc(() => favBtn.click()) },
       { label: "Tags…", run: openTagsDialog },
+      { label: "Move to folder…", run: needDoc(moveCurrentToCollection) },
+      { label: "Import…", run: openImportPicker },
       { label: "Move to trash", run: needDoc(() => deleteBtn.click()) },
       "-",
       { label: "Language", sub: langs.map(([c, n]) => ({ label: n, check: () => richEditor.lang === c, run: () => setLanguage(c, n) })) },
@@ -4732,6 +5916,12 @@ SOFTWARE.`;
       { label: "Checklist", key: "Ctrl+Shift+9", run: toggleChecklist },
       "-",
       { label: "Page break", key: "Ctrl+Enter", run: needDoc(insertPageBreak) },
+      { label: "Footnote", key: "Ctrl+Alt+F", run: needDoc(insertFootnote) },
+      { label: "Header & footer…", run: needDoc(showHeaderFooter) },
+      { label: "Page numbers", sub: [
+        ["none", "None"], ["top-left", "Top left"], ["top-center", "Top center"], ["top-right", "Top right"],
+        ["bottom-left", "Bottom left"], ["bottom-center", "Bottom center"], ["bottom-right", "Bottom right"],
+      ].map(([v, t]) => ({ label: t, check: () => docLayout().pageNumbers === v, run: needDoc(() => setLayout({ pageNumbers: v })) })) },
       { label: "Date and time", sub: [
         { label: "Date", run: () => insertText(fmtDateLong()) },
         { label: "Time", run: () => insertText(fmtTime()) },
@@ -4768,7 +5958,7 @@ SOFTWARE.`;
         { label: "Text color", run: clickId("textColorBtn") },
         { label: "Highlight color", run: clickId("highlightBtn") },
       ] },
-      { label: "Font", sub: fontNames.map((f) => ({ label: f, run: cmd("fontName", f) })) },
+      { label: "Font", sub: fontNames.map((f) => ({ label: f, run: needDoc(() => { applyFontFamily(f); syncToolbar(); }) })) },
       { label: "Font size", sub: [
         { label: "Increase font size", key: "Ctrl+Shift+.", run: needDoc(() => stepFontSize(1)) },
         { label: "Decrease font size", key: "Ctrl+Shift+,", run: needDoc(() => stepFontSize(-1)) },
@@ -4982,4 +6172,61 @@ SOFTWARE.`;
 
   initTheme();
   loadDocuments().catch((err) => showToast("Loading error: " + err.message));
+})();
+
+/* Full document names: while the pointer is over a document (side list, home list or home card)
+   a floating label shows the whole name on ONE line (never wrapped, never cut with "..."). */
+(function () {
+  "use strict";
+  const SEL = ".doc-item, .home-row, .home-card";
+  let tip = null, current = null;
+
+  function ensureTip() {
+    if (tip) return tip;
+    tip = document.createElement("div");
+    tip.className = "name-tip";
+    tip.setAttribute("role", "tooltip");
+    document.body.appendChild(tip);
+    return tip;
+  }
+  function hide() {
+    current = null;
+    if (tip) tip.classList.remove("show");
+  }
+  function show(el) {
+    const name = el.dataset.fullname;
+    if (!name) return hide();
+    const t = ensureTip();
+    t.textContent = name;
+    t.classList.add("show");
+    current = el;
+    place(el, t);
+  }
+  function place(el, t) {
+    const r = el.getBoundingClientRect();
+    const w = t.offsetWidth, h = t.offsetHeight, vw = document.documentElement.clientWidth;
+    let left = Math.min(Math.max(8, r.left), Math.max(8, vw - w - 8));
+    let top = r.top - h - 6;
+    if (top < 8) top = r.bottom + 6;
+    t.style.left = left + "px";
+    t.style.top = top + "px";
+  }
+  document.addEventListener("mouseover", (e) => {
+    const el = e.target.closest && e.target.closest(SEL);
+    if (!el) return hide();
+    if (el !== current) show(el);
+  });
+  document.addEventListener("mouseout", (e) => {
+    if (!current) return;
+    const to = e.relatedTarget;
+    if (!to || !current.contains(to)) hide();
+  });
+  document.addEventListener("focusin", (e) => {
+    const el = e.target.closest && e.target.closest(SEL);
+    if (el) show(el);
+  });
+  document.addEventListener("focusout", hide);
+  document.addEventListener("scroll", hide, true);
+  document.addEventListener("dragstart", hide, true);
+  document.addEventListener("click", hide, true);
 })();

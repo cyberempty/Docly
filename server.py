@@ -16,13 +16,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote, parse_qs, quote
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DOCS_DIR = os.path.join(BASE_DIR, "documents")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
+# All user data lives in the "documents" folder next to server.py (relative path), so the whole
+# Docly folder can be moved or renamed and every document and folder moves with it.
+DOCS_DIR = os.path.join(BASE_DIR, "documents")
+LEGACY_DOCS_DIR = os.path.join(STATIC_DIR, "documents")   # previous location, migrated on start
+PREF_FILE_NAME = "preference.json"
 HOST = "127.0.0.1"
 PORT = 8756
 VALID_TYPES = {"note"}
 META_FILE = "document.json"
-APP_TRASH_DIR = os.path.join(BASE_DIR, ".trash")
+APP_TRASH_DIR = os.path.join(DOCS_DIR, ".trash")
 
 _lock = threading.RLock()
 _index = {}
@@ -38,6 +42,105 @@ def valid_iso(value):
         return value
     except ValueError:
         return None
+
+PREF_FILE = os.path.join(DOCS_DIR, PREF_FILE_NAME)
+LEGACY_FOLDERS_FILE = os.path.join(DOCS_DIR, ".folders.json")
+
+def _read_pref():
+    try:
+        with open(PREF_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+def _write_pref(data):
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    tmp = PREF_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, PREF_FILE)
+
+def load_folders():
+    """Names of the folders (collections) that exist, including empty ones."""
+    names = _read_pref().get("folders")
+    return [clean_collection(n) for n in names if clean_collection(n)] if isinstance(names, list) else []
+
+def save_folders(names):
+    seen, out = set(), []
+    for n in names:
+        n = clean_collection(n)
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    data = _read_pref()          # keep any other preference stored in the file
+    data["version"] = 1
+    data["folders"] = sorted(out, key=str.lower)
+    _write_pref(data)
+
+def migrate_legacy_data():
+    """Move data from the previous layout (static/documents, documents/.folders.json) into ./documents."""
+    os.makedirs(DOCS_DIR, exist_ok=True)
+    if os.path.isdir(LEGACY_DOCS_DIR) and os.path.abspath(LEGACY_DOCS_DIR) != os.path.abspath(DOCS_DIR):
+        for entry in os.listdir(LEGACY_DOCS_DIR):
+            src = os.path.join(LEGACY_DOCS_DIR, entry)
+            if entry == ".folders.json":
+                continue
+            dst = os.path.join(DOCS_DIR, entry)
+            if not os.path.exists(dst):
+                shutil.move(src, dst)
+        old_folders = os.path.join(LEGACY_DOCS_DIR, ".folders.json")
+        if os.path.isfile(old_folders) and not os.path.isfile(LEGACY_FOLDERS_FILE):
+            shutil.copy2(old_folders, LEGACY_FOLDERS_FILE)
+        if os.path.isfile(old_folders):
+            try:
+                os.remove(old_folders)
+            except OSError:
+                pass
+        try:
+            if not os.listdir(LEGACY_DOCS_DIR):
+                os.rmdir(LEGACY_DOCS_DIR)
+        except OSError:
+            pass
+    # .folders.json -> preference.json
+    if os.path.isfile(LEGACY_FOLDERS_FILE):
+        try:
+            with open(LEGACY_FOLDERS_FILE, "r", encoding="utf-8") as f:
+                old = json.load(f)
+        except (OSError, ValueError):
+            old = []
+        if isinstance(old, list):
+            save_folders(load_folders() + [n for n in old if isinstance(n, str)])
+        try:
+            os.replace(LEGACY_FOLDERS_FILE, LEGACY_FOLDERS_FILE + ".migrated")
+        except OSError:
+            pass
+    # always make sure preference.json exists (never delete it!)
+    if not os.path.isfile(PREF_FILE):
+        save_folders(load_folders())
+
+def clean_collection(value):
+    """Collection (folder) name: plain text, up to 60 characters, empty = none."""
+    if not isinstance(value, str):
+        return ""
+    value = re.sub(r"[\x00-\x1f]", "", value)
+    return re.sub(r"\s+", " ", value).strip()[:60]
+
+def clean_layout(value):
+    """Header / footer / page-number settings: a small dict of short strings."""
+    out = {}
+    if not isinstance(value, dict):
+        return out
+    for key in ("header", "footer"):
+        v = value.get(key)
+        if isinstance(v, str):
+            out[key] = v[:300]
+    pn = value.get("pageNumbers")
+    if pn in ("none", "top-left", "top-center", "top-right", "bottom-left", "bottom-center", "bottom-right"):
+        out["pageNumbers"] = pn
+    if value.get("skipFirst") is True:
+        out["skipFirst"] = True
+    return out
 
 def strip_html(html):
     text = re.sub(r"<[^>]+>", " ", html or "")
@@ -113,6 +216,7 @@ def public_meta(data):
         "type": data.get("type", "note"),
         "favorite": bool(data.get("favorite", False)),
         "tags": data.get("tags", []),
+        "collection": data.get("collection", ""),
         "preview": preview,
         "createdAt": data.get("createdAt"),
         "updatedAt": data.get("updatedAt"),
@@ -177,7 +281,11 @@ class DoclyHandler(BaseHTTPRequestHandler):
         if rel_path == "":
             rel_path = "index.html"
         full = os.path.normpath(os.path.join(STATIC_DIR, rel_path))
-        if not full.startswith(os.path.normpath(STATIC_DIR)):
+        if not full.startswith(os.path.normpath(STATIC_DIR) + os.sep) and full != os.path.normpath(STATIC_DIR):
+            self._send_error_json(403, "Forbidden")
+            return
+        # user data is only reachable through the API, never as a plain file
+        if full.startswith(os.path.normpath(DOCS_DIR) + os.sep) or full == os.path.normpath(DOCS_DIR):
             self._send_error_json(403, "Forbidden")
             return
         if not os.path.isfile(full):
@@ -192,7 +300,8 @@ class DoclyHandler(BaseHTTPRequestHandler):
         if path == "/api/documents":
             with _lock:
                 docs = [public_meta(d) for d in all_docs_sorted()]
-            self._send_json(200, {"documents": docs})
+                folders = load_folders()
+            self._send_json(200, {"documents": docs, "collections": folders})
             return
 
         if path == "/api/search":
@@ -208,6 +317,7 @@ class DoclyHandler(BaseHTTPRequestHandler):
                         d.get("title", ""),
                         strip_html(d.get("content", "")),
                         " ".join(d.get("tags", [])),
+                        d.get("collection", ""),
                     ]).lower()
                     if query in haystack:
                         results.append(public_meta(d))
@@ -274,6 +384,8 @@ class DoclyHandler(BaseHTTPRequestHandler):
                     "content": content if isinstance(content, str) else "",
                     "tags": [str(t)[:40] for t in tags][:30] if isinstance(tags, list) else [],
                     "favorite": bool(body.get("favorite", False)),
+                    "collection": clean_collection(body.get("collection")),
+                    "layout": clean_layout(body.get("layout")),
                     "createdAt": valid_iso(body.get("createdAt")) or ts,
                     "updatedAt": valid_iso(body.get("updatedAt")) or ts,
                 }
@@ -287,6 +399,42 @@ class DoclyHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+
+        if path == "/api/collections/create":
+            body = self._read_json_body()
+            name = clean_collection(body.get("name")) if isinstance(body, dict) else ""
+            if not name:
+                self._send_error_json(400, "Missing folder name")
+                return
+            with _lock:
+                save_folders(load_folders() + [name])
+            self._send_json(200, {"ok": True, "name": name})
+            return
+
+        if path in ("/api/collections/rename", "/api/collections/delete"):
+            body = self._read_json_body()
+            if not isinstance(body, dict):
+                self._send_error_json(400, "Invalid JSON")
+                return
+            old_name = clean_collection(body.get("name"))
+            new_name = clean_collection(body.get("to")) if path.endswith("rename") else ""
+            if not old_name or (path.endswith("rename") and not new_name):
+                self._send_error_json(400, "Missing collection name")
+                return
+            changed = 0
+            with _lock:
+                names = [n for n in load_folders() if n.lower() != old_name.lower()]
+                if new_name:
+                    names.append(new_name)
+                save_folders(names)
+                for doc_id, folder in list(_index.items()):
+                    data, _ = load_doc(doc_id)
+                    if data and data.get("collection", "") == old_name:
+                        data["collection"] = new_name
+                        save_doc(data, folder)
+                        changed += 1
+            self._send_json(200, {"ok": True, "changed": changed})
+            return
 
         m = re.match(r"^/api/documents/([^/]+)/rename$", path)
         if m:
@@ -331,11 +479,22 @@ class DoclyHandler(BaseHTTPRequestHandler):
                 if not data:
                     self._send_error_json(404, "Document not found")
                     return
+                touch = False
                 if "content" in body:
                     data["content"] = body["content"]
+                    touch = True
                 if "tags" in body and isinstance(body["tags"], list):
                     data["tags"] = [str(t)[:40] for t in body["tags"]][:30]
-                data["updatedAt"] = now_iso()
+                    touch = True
+                if "layout" in body:
+                    data["layout"] = clean_layout(body["layout"])
+                    touch = True
+                if "collection" in body:
+                    data["collection"] = clean_collection(body["collection"])   # moving does not change "last modified"
+                    if data["collection"]:
+                        save_folders(load_folders() + [data["collection"]])
+                if touch:
+                    data["updatedAt"] = now_iso()
                 save_doc(data, folder)
             self._send_json(200, data)
             return
@@ -467,10 +626,12 @@ def open_browser_delayed():
 def main():
     global _index
     ensure_docs_dir()
+    migrate_legacy_data()
     _index = build_index()
     server = ThreadingHTTPServer((HOST, PORT), DoclyHandler)
     print(f"Open browser at: http://{HOST}:{PORT}")
     print(f"Documents saved in: {DOCS_DIR}")
+    print(f"Main file (do not delete): {PREF_FILE}")
     if "--no-browser" not in sys.argv:
         threading.Thread(target=open_browser_delayed, daemon=True).start()
     try:

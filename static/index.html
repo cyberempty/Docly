@@ -43,6 +43,7 @@
       <button class="filter-btn" data-filter="recent">Recent</button>
       <button class="filter-btn" data-filter="favorites">Favorites</button>
     </nav>
+    <select id="collectionSelect" class="collection-select" title="Folder" aria-label="Folder"></select>
 
     <div id="docList" class="doc-list"></div>
 
@@ -82,9 +83,9 @@
               <span class="home-new-thumb"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M22 8h4v14h14v4H26v14h-4V26H8v-4h14z"/></svg></span>
               <span class="home-new-label">Create new document</span>
             </button>
-            <button id="homeImportBtn" class="home-new-card" title="Import JSON">
+            <button id="homeImportBtn" class="home-new-card" title="Import (Word, Markdown, text, HTML, Docly JSON or ZIP)">
               <span class="home-new-thumb"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4l-4 4h3v12h2V8h3zM12 36v-4H8v8h32v-8h-4v4z"/></svg></span>
-              <span class="home-new-label">Import JSON</span>
+              <span class="home-new-label">Import</span>
             </button>
           </div>
 
@@ -95,6 +96,16 @@
               <button class="filter-btn" data-filter="recent">Recent</button>
               <button class="filter-btn" data-filter="favorites">Favorites</button>
             </nav>
+          </div>
+          <div id="homeCollections" class="collection-bar" aria-label="Folders"></div>
+          <div id="selBar" class="sel-bar hidden">
+            <span id="selCount" class="sel-count"></span>
+            <button type="button" class="sel-btn" id="selAll">Select all</button>
+            <button type="button" class="sel-btn" id="selMove">Move to folder</button>
+            <button type="button" class="sel-btn hidden" id="selOut">Take out of folder</button>
+            <button type="button" class="sel-btn" id="selExport">Export (ZIP)</button>
+            <button type="button" class="sel-btn sel-danger" id="selDelete">Delete</button>
+            <button type="button" class="sel-btn sel-close" id="selClear" title="Clear selection" aria-label="Clear selection">&times;</button>
           </div>
           <div id="homeContent" class="home-content"></div>
         </div>
@@ -249,6 +260,8 @@
         <div class="page-scroll">
           <div id="pageArea" class="page-area">
             <div id="richEditor" class="rich-editor" contenteditable="true" spellcheck="true"></div>
+            <div id="pageHeader" class="hf-overlay hf-top" aria-hidden="true"><span class="hf-l"></span><span class="hf-c"></span><span class="hf-r"></span></div>
+            <div id="pageFooter" class="hf-overlay hf-bottom" aria-hidden="true"><span class="hf-l"></span><span class="hf-c"></span><span class="hf-r"></span></div>
           </div>
         </div>
         <div id="minimap" class="minimap hidden" aria-hidden="true">
@@ -287,7 +300,7 @@
 <div id="sizeMenu" class="size-menu hidden"></div>
 <div id="colorPanel" class="color-panel hidden"></div>
 <input type="color" id="cpNative" class="cp-native" tabindex="-1" aria-hidden="true">
-<input type="file" id="jsonImportInput" accept=".json,application/json" class="hidden">
+<input type="file" id="jsonImportInput" accept=".json,.docx,.md,.markdown,.txt,.html,.htm,.zip" multiple class="hidden">
 
 <div id="modalOverlay" class="modal-overlay hidden">
   <div id="modal" class="modal">

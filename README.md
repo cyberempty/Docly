@@ -2,6 +2,8 @@
 
 **Docly** is a word processor that runs entirely on your computer: no account, no cloud, no Internet. Your documents are plain files in the `documents/` folder.
 
+> ⚠️ **WARNING: never delete the `preference.json` file** (`documents/preference.json`). It is the main file of Docly and keeps your folders and settings. If you delete it, your folder organization is lost.
+
 ![Home, light theme](images/home-light-theme.png)
 
 ![Home, dark theme](images/home-dark-theme.png)
@@ -26,10 +28,10 @@ To quit: wait for **Saved** at the top, close the tab, then close the black serv
 
 ### First steps
 
-1. On the home page click **Create new document** (or **Import JSON**).
+1. On the home page click **Create new document** (or **Import** a Word, Markdown, text, HTML, Docly JSON or ZIP file; you can also drop files on the home page).
 2. Type a name, press **OK** and start writing in the page.
 3. Everything saves automatically less than a second after each change.
-4. Export from **File ▸ Download** (Word, OpenDocument, RTF, PDF, TXT, HTML, EPUB, Markdown, JSON backup). Open any document again from the home page or the search box.
+4. Export from **File ▸ Download** (Word, OpenDocument, RTF, PDF, TXT, HTML, EPUB, Markdown, JSON backup). Organize documents in **folders** (drag and drop) and select several at once to move, export or delete them.
 
 ### Quick commands
 
@@ -43,6 +45,7 @@ To quit: wait for **Saved** at the top, close the tab, then close the black serv
 | `Ctrl+Alt+1…6` | Heading 1–6 | `Ctrl+H` | Find and replace |
 | `Ctrl+Shift+7` / `8` / `9` | Numbered / bulleted / check list | `Ctrl+P` | Print |
 | `Ctrl+Enter` | Page break | `Ctrl+/` or `F1` | All shortcuts |
+| `Ctrl+Alt+F` | Footnote | | |
 
 ---
 
@@ -103,6 +106,7 @@ To quit: wait for **Saved** at the top, close the tab, then close the black serv
 | Keys | Action |
 |---|---|
 | `Ctrl+Enter` | Page break |
+| `Ctrl+Alt+F` | Insert a footnote |
 | `Tab` / `Shift+Tab` | Next / previous table cell (a new row is added after the last cell) |
 
 **Menus**
@@ -137,6 +141,11 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 | Click the title (top bar) | Rename the document |
 | Click the ☆ star | Add / remove from Favorites |
 | Click the 🗑 bin | Delete (see *Delete* below) |
+| Drag a document onto a folder (home) | Put it inside (if it is selected, the whole selection moves) |
+| Drag a document onto **Take out of folder** (appears while dragging) | Remove it from its folder |
+| Click the circle on a document (home) | Select it; `Ctrl`/`Shift`+click also selects; `Esc` clears the selection |
+| Drop files on the home page | Import them |
+| Click a footnote number | Jump to the note (and back from the note) |
 | Click a link | Open it in a new tab |
 | Drag across table cells | Select cells |
 | Right-click inside a table | Table menu |
@@ -147,15 +156,15 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 - **Top bar**: home, document list, document name (click to rename), favorite, delete, save status (*Saving…* / *Saved*), menus.
 - **Toolbar**: Undo, Redo, Print, Zoom, Paragraph style, Font, Font size − / +, Bold, Italic, Underline, Strikethrough, Text color, Highlight, Superscript, Subscript, Change case, Link, Remove link, Table, Horizontal line, Code block, Align (left, center, right, justify), Line spacing, Bulleted list, Numbered list, Decrease / increase indent, Clear formatting, Find and replace.
 - **Top right**: Help, Program info, Light / dark theme.
-- **Home**: search, Create new document, Import JSON, list / grid view, filters **All / Recent / Favorites**.
+- **Home**: search, Create new document, Import, list / grid view, filters **All / Recent / Favorites**, folder tiles (**All documents**, your folders, **New folder**), a 📁 button on every document, and a selection bar (Select all, Move to folder, Take out of folder, Export ZIP, Delete) when documents are selected.
 - **Status bar**: cursor position (line, column), characters, words.
 
 ### Menus
 
-- **File**: New document · Open document · All documents (home) · Make a copy · Download ▸ (Word, OpenDocument, RTF, PDF, TXT, HTML, EPUB, Markdown, Docly backup JSON) · Save · Rename · Add / remove favorite · Tags… · Move to trash · Language ▸ · Page setup · Print · Document details · Word count · Show file path
+- **File**: New document · Open document · All documents (home) · Make a copy · Download ▸ (Word, OpenDocument, RTF, PDF, TXT, HTML, EPUB, Markdown, Docly backup JSON) · Import… · Save · Rename · Add / remove favorite · Tags… · Move to folder… · Move to trash · Language ▸ · Page setup · Print · Document details · Word count · Show file path
 - **Edit**: Undo · Redo · Cut · Copy · Paste · Paste without formatting · Select all · Delete · Find · Find and replace · Copy formatting · Paste formatting · Clear formatting · Editing preferences ▸ Spelling check
 - **View**: Mode ▸ (Editing, Viewing) · Print layout (pages) · Ruler · Document outline · Non-printing characters · Toolbar · Minimap · Document list · Zoom ▸ (50% – 200%) · Full screen · Light / dark theme
-- **Insert**: Table · Emoji and special characters · Link · Horizontal line · Code block · Checklist · Page break · Date and time ▸ · Bookmark · Link to heading or bookmark · Table of contents ▸ (insert, update)
+- **Insert**: Table · Emoji and special characters · Link · Horizontal line · Code block · Checklist · Page break · Footnote · Header & footer… · Page numbers ▸ · Date and time ▸ · Bookmark · Link to heading or bookmark · Table of contents ▸ (insert, update)
 - **Format**: Text ▸ · Font ▸ · Font size ▸ · Capitalization ▸ · Page orientation ▸ · Paragraph styles ▸ (Normal, Title, Subtitle, Heading 1–6, Quote) · Align ▸ · Lists ▸ · Indent ▸ · Line spacing ▸ · Paragraph spacing ▸ · Paragraph borders and shading ▸ · Clear formatting
 - **Table**: Insert table · Insert row above / below · Insert column left / right · Delete row / column / table · Merge cells · Split cell · Distribute rows / columns · Cell vertical and content alignment · Cell background color · Border color and width · Column width · Minimum row height · Header row · Table properties
 - **Tools**: Word count · Spelling check · Change case · Text color · Highlight color
@@ -178,7 +187,13 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 - **Make a copy**: File ▸ Make a copy creates *Copy of …* with the same content.
 - **Document details**: title, creation and modification dates, words, characters, tables, tags. **Show file path** gives the folder on disk.
 - **Delete**: two confirmations. First *Cancel / Delete*, then *Cancel / Delete / Export JSON and delete*. The folder goes to the **Recycle Bin / Trash**.
-- **Restore**: export with *Export JSON and delete* (or File ▸ Download ▸ Docly backup), then **Import JSON** on the home page: the document comes back with its title, content, tags, favorite and dates, as if it had never been deleted.
+- **Restore**: export with *Export JSON and delete* (or File ▸ Download ▸ Docly backup), then **Import** it (or the backup ZIP) on the home page: the document comes back with its title, content, tags, favorite and dates, as if it had never been deleted.
+- **Folders**: the folder tiles on the home page work like real folders.
+  - **Put documents in**: drag a document (or the whole selection) onto a folder tile; or click the 📁 button on the document (also in the document list) and choose a folder; or File ▸ Move to folder…. Dropping on **New folder** creates a folder and puts the document in it.
+  - **Take documents out**: drag them onto **Take out of folder** (it appears while you drag), or click the 📂 button and choose *Take out of folder*, or use **Take out of folder** in the selection bar.
+  - **Open a folder**: click its tile (click **All documents** to see everything again). The open folder can be renamed or deleted (its documents are kept and simply leave the folder).
+  - **Empty folders stay**: the list of folders is saved in `documents/preference.json`, and each document stores its folder name in `document.json`, so the document folders on disk do not change.
+- **Multiple selection**: click the circle on a document (or `Ctrl`/`Shift`+click) on the home page, then **Move to folder**, **Take out of folder**, **Export (ZIP)** (one `<Name>_Docly.json` per document) or **Delete** (same two confirmations, with *Export ZIP and delete*).
 - **Names**: up to 120 characters, spaces allowed, invalid Windows characters removed, duplicates get `(2)`, `(3)`…; folders are named `NAME_Docly`.
 
 ### Text and paragraphs
@@ -188,13 +203,16 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 - **Paragraphs**: alignment, indents, line spacing (single, 1.15, 1.5, double), space before / after, borders and shading.
 - **Lists**: bulleted, numbered and checklists; typing a list marker starts a list automatically.
 - **Copy / paste formatting** and **clear formatting**.
-- **Paste**: images in pasted content are removed (see *Limits*); `Ctrl+Shift+V` pastes plain text.
+- **Paste**: text copied from other programs (Word, web pages…) takes the document's font instead of bringing its own (for example Comic Sans), and images are removed (see *Limits*); content copied inside Docly keeps its fonts; `Ctrl+Shift+V` pastes plain text.
+- **Speed**: with the whole document selected (`Ctrl+A`), changing the font is instant even on long documents.
 
 ### Insert
 
 - **Tables**: size picker, rows, columns, merge and split cells, cell selection, header row, column width, row height, borders, background colors, alignment, distribute evenly.
 - **Links**: to a web page (opens in a new tab), to a heading or to a bookmark; pasting a URL over selected text makes a link.
 - **Bookmarks and table of contents**: insert, update.
+- **Header, footer and page numbers**: Insert ▸ Header & footer… (text for the header and the footer, page numbers in any of the six corners, optionally hidden on the first page). In the text, `{page}`, `{pages}`, `{title}` and `{date}` are replaced automatically. They appear on printed pages, in the PDF and in Word (as real page fields); the editor shows a preview at the top and bottom of the page.
+- **Footnotes**: `Ctrl+Alt+F` inserts a numbered reference and a note you type right away. Notes are listed at the end of the document, renumbered automatically when you add, move or delete references.
 - **Other**: horizontal line, code block, emoji and special characters, date and time, page break.
 
 ### Find and replace
@@ -219,9 +237,12 @@ Document language (English, Italiano, Español, Français, Deutsch, Português) 
 
 - **Save**: autosave less than a second after each change, manual `Ctrl+S`, status *Saving… / Saved*, safe atomic writes, warning if you close the tab with unsaved changes.
 - **Download**: Word `.docx`, OpenDocument `.odt`, Rich Text `.rtf`, `.pdf`, plain text `.txt`, web page `.html`, `.epub`, Markdown `.md`, and **Docly backup** `.json`.
-- **PDF**: generated directly in the browser (no print dialog, no browser header or footer). Text stays selectable and links are **blue** and clickable.
+- **PDF**: generated directly in the browser (no print dialog, no browser header or footer). Text stays selectable, links are **blue** and clickable, and header, footer and page numbers are drawn on every page. **Fonts are embedded**: in Chrome or Edge the first export asks permission to read the installed fonts, then Arial, Georgia, Times New Roman, Courier New… are stored in the PDF (TrueType fonts; a missing bold or italic is simulated). Without permission, or in other browsers, the standard PDF fonts are used.
 - **Docly backup**: file named `<Document name>_Docly.json` with the whole document (title, content, tags, favorite, page setup, dates).
-- **Import**: only the Docly JSON backup. It always creates a new document and never overwrites an existing one.
+- **Import**: Word `.docx`, Markdown `.md`, text `.txt`, web page `.html`, the Docly backup `.json`, and a `.zip` containing any of them (for instance a backup ZIP). Several files can be imported at once. It always creates new documents and never overwrites an existing one.
+  - **Word**: paragraphs, headings, bold, italic, underline, strikethrough, colors, highlight, sizes, links, bulleted and numbered lists, tables (with merged cells) and page breaks. Images, headers, footers and footnotes of the Word file are not imported.
+  - **Markdown**: headings, bold, italic, code, links, lists (also nested and checklists), quotes, tables, code blocks and horizontal lines.
+  - **HTML**: structure and basic formatting; scripts, images, classes and fonts are dropped.
 - **Print**: `Ctrl+P` prints the page without the interface.
 
 ---
@@ -236,8 +257,10 @@ Docly/
 ├── server.py      ← local server and API (Python standard library only)
 ├── README.md
 ├── images/        ← 4 screenshots (home and editor, light and dark)
-├── static/        ← index.html, style.css, app.js (the editor)
-└── documents/     ← your documents: one folder each, named NAME_Docly, with document.json
+├── static/        ← the editor: index.html, style.css, app.js
+└── documents/     ← ALL your data (relative to server.py)
+    ├── preference.json             ← main file: DO NOT DELETE
+    └── NAME_Docly/document.json    ← one folder per document
 ```
 
 ### How it works
@@ -245,7 +268,7 @@ Docly/
 - **Backend**: `server.py` serves the site and saves documents to disk through a small REST API. It listens only on `127.0.0.1:8756`.
 - **Frontend**: plain HTML, CSS and JavaScript with no framework or external libraries. All exports (Word, OpenDocument, RTF, PDF, EPUB and the others) are generated in the browser.
 - **Privacy**: nothing leaves your computer and it works fully offline.
-- **Data**: `document.json` holds id, title, content (HTML), tags, favorite and dates. Backup = copy the `documents/` folder, or use Docly backup (JSON) → Import JSON.
+- **Data**: all data lives in the `documents/` folder next to `server.py` (relative path), so you can move or rename the `Docly` folder and everything (documents, folders, files) stays in place. `preference.json` holds the list of folders (also empty ones); `document.json` holds id, title, content (HTML), tags, favorite, folder, header / footer settings and dates. The files in `documents/` are reachable only through the API. Backup = copy the `documents/` folder, or use Docly backup (JSON) → Import JSON.
 
 | Method | Path | Function |
 |---|---|---|
@@ -253,14 +276,19 @@ Docly/
 | `GET` / `PUT` / `DELETE` | `/api/documents/<id>` | read / save / move to Recycle Bin |
 | `GET` | `/api/documents/<id>/path` | folder path on disk |
 | `PUT` | `/api/documents/<id>/rename` · `/favorite` | rename / toggle favorite |
+| `PUT` | `/api/collections/create` · `/rename` · `/delete` | create / rename / remove a folder |
 | `GET` | `/api/search?q=` | search title, text and tags |
 
 ### Limits and tips
 
-- **Images are not supported**: pictures are removed when you paste, drop or open content that contains them. Docly is for text, tables and lists.
+- **Images are not supported**: pictures are removed when you paste, drop or import content that contains them. Docly is for text, tables and lists.
 - Page size, orientation, color and margins are saved in the browser and apply to every document, not to a single one.
 - The `.docx`, `.odt`, `.rtf` and `.epub` exports have not been checked in every program; open them once before sending them.
-- The PDF uses the standard PDF fonts (Helvetica and Courier), so other fonts are replaced.
+- PDF font embedding needs Chrome or Edge and the *local fonts* permission, and works with TrueType fonts (`.ttf`); OpenType/CFF (`.otf`) and font collections (`.ttc`) fall back to the standard PDF fonts.
+- Footnotes are listed at the end of the document, not at the bottom of each page. Headers, footers and page numbers are exported to print, PDF and Word (not to the other formats).
+- A folder holds documents of one level only (no folders inside folders).
+- The instant font change applies to the whole document (`Ctrl+A`); a partial selection uses the browser's normal command.
+- Document names: while the pointer is over a document, its full name is shown on a single line (it never wraps). Upgrading from an older version? On first start Docly moves the data from `static/documents/` (and the old `.folders.json`) into `documents/` and creates `preference.json` automatically.
 - Old version still showing? Reload with `Ctrl+F5`. Port 8756 busy? Docly is already running: close the other window.
 
 ---
