@@ -1459,6 +1459,8 @@
 
   function closeColorPanel() {
     colorPanel.classList.add("hidden");
+    colorPanel.classList.remove("cp-v2");
+    closeCpCtx();
     el("textColorBtn").classList.remove("open");
     el("highlightBtn").classList.remove("open");
     colorMode = null;
@@ -1521,6 +1523,37 @@
   }
   const EYEDROPPER_SVG = '<svg viewBox="0 0 24 24"><path d="M20.71 5.63l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-3.12 3.12-1.93-1.91-1.41 1.41 1.42 1.42L3 16.25V21h4.75l8.92-8.92 1.42 1.42 1.41-1.41-1.92-1.92 3.12-3.12c.4-.4.4-1.03.01-1.42zM6.92 19L5 17.08l8.06-8.06 1.92 1.92L6.92 19z"/></svg>';
 
+  const CP_PALETTE = [
+    ["#000000", "#1f2937", "#374151", "#6b7280", "#9ca3af", "#d1d5db", "#f3f4f6", "#ffffff"],
+    ["#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e", "#14b8a6", "#06b6d4"],
+    ["#3b82f6", "#6366f1", "#8b5cf6", "#d946ef", "#ec4899", "#f43f5e", "#92400e", "#065f46"],
+  ];
+
+  // Small menu shown on right-click over a recent colour: delete that colour from the list.
+  let cpCtx = null;
+  function closeCpCtx() { if (cpCtx) { cpCtx.remove(); cpCtx = null; } }
+  function openCpCtx(x, y, items) {
+    closeCpCtx();
+    const m = document.createElement("div");
+    m.className = "ctx-menu";
+    m.setAttribute("role", "menu");
+    items.forEach(([label, fn]) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "ctx-item danger"; b.textContent = label;
+      b.addEventListener("click", () => { closeCpCtx(); fn(); });
+      m.appendChild(b);
+    });
+    document.body.appendChild(m);
+    const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+    m.style.left = Math.max(4, Math.min(x, vw - m.offsetWidth - 4)) + "px";
+    m.style.top = Math.max(4, Math.min(y, vh - m.offsetHeight - 4)) + "px";
+    cpCtx = m;
+  }
+  document.addEventListener("mousedown", (e) => { if (cpCtx && !cpCtx.contains(e.target)) closeCpCtx(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCpCtx(); });
+  window.addEventListener("blur", closeCpCtx);
+  document.addEventListener("scroll", closeCpCtx, true);
+
   function openColorPanel(mode) {
     if (colorMode === mode) { closeColorPanel(); return; }
     closeMenu();
@@ -1528,43 +1561,45 @@
     closeColorPanel();
     colorMode = mode;
     colorPanel.innerHTML = "";
+    colorPanel.classList.add("cp-v2");
+
+    const sv = document.createElement("div");
+    sv.className = "cp2-sv";
+    sv.innerHTML = '<div class="cp2-handle"></div>';
+    colorPanel.appendChild(sv);
+
+    const hue = document.createElement("div");
+    hue.className = "cp2-hue";
+    hue.innerHTML = '<div class="cp2-hue-thumb"></div>';
+    colorPanel.appendChild(hue);
+
+    const hexIn = document.createElement("input");
+    hexIn.className = "cp2-hex";
+    hexIn.maxLength = 7;
+    hexIn.autocomplete = "off";
+    hexIn.spellcheck = false;
+    hexIn.setAttribute("aria-label", "Hex color");
+    colorPanel.appendChild(hexIn);
+
+    const grid = document.createElement("div");
+    grid.className = "cp2-grid";
+    colorPanel.appendChild(grid);
+
+    const recentWrap = document.createElement("div");
+    recentWrap.className = "cp2-recent-wrap";
+    recentWrap.innerHTML = '<div class="cp2-label">Recent</div><div class="cp2-recent"></div>';
+    colorPanel.appendChild(recentWrap);
+    const recent = recentWrap.lastChild;
 
     const reset = document.createElement("button");
-    reset.className = "cp-reset";
+    reset.type = "button";
+    reset.className = "cp2-reset";
     reset.innerHTML = '<span class="cp-none"></span><span></span>';
     reset.lastChild.textContent = mode === "text" ? "Reset" : "None";
     reset.addEventListener("click", () => applyColor(mode, null));
     colorPanel.appendChild(reset);
 
-    const sv = document.createElement("div");
-    sv.className = "cp-sv";
-    sv.innerHTML = '<div class="cp-sv-handle"></div>';
-    colorPanel.appendChild(sv);
-
-    const mid = document.createElement("div");
-    mid.className = "cp-mid";
-    mid.innerHTML = '<button type="button" class="cp-eye" title="Pick a color from the screen (eyedropper)">' + EYEDROPPER_SVG + '</button>' +
-      '<span class="cp-preview" title="Selected color"></span>' +
-      '<div class="cp-hue"><div class="cp-hue-thumb"></div></div>';
-    colorPanel.appendChild(mid);
-
-    const rgb = document.createElement("div");
-    rgb.className = "cp-rgb";
-    rgb.innerHTML = ["R", "G", "B"].map((l) => '<label><input class="cp-num" data-ch="' + l + '" inputmode="numeric" maxlength="3" autocomplete="off"><span>' + l + '</span></label>').join("") +
-      '<label class="cp-hex-wrap"><input class="cp-hex" maxlength="7" autocomplete="off" spellcheck="false"><span>HEX</span></label>';
-    colorPanel.appendChild(rgb);
-
-    const lbl = document.createElement("div");
-    lbl.className = "cp-label";
-    lbl.textContent = "Recent";
-    const recent = document.createElement("div");
-    recent.className = "cp-recent";
-    if (recentColors.length) { colorPanel.appendChild(lbl); colorPanel.appendChild(recent); }
-
-    const handle = sv.firstChild, hue = mid.querySelector(".cp-hue"), thumb = hue.firstChild;
-    const preview = mid.querySelector(".cp-preview"), eye = mid.querySelector(".cp-eye");
-    const nums = Array.from(rgb.querySelectorAll(".cp-num")), hexIn = rgb.querySelector(".cp-hex");
-
+    const handle = sv.firstChild, thumb = hue.firstChild;
     const start = cpCurrentColor(mode) || cpParse(mode === "text" ? "#000000" : lastHighlight) || [0, 0, 0];
     let [H, S, V] = cpRgb2hsv(start[0], start[1], start[2]);
 
@@ -1574,15 +1609,14 @@
       handle.style.left = S * 100 + "%";
       handle.style.top = (1 - V) * 100 + "%";
       thumb.style.left = (H / 360) * 100 + "%";
-      preview.style.background = cpHex(r, g, b);
-      [r, g, b].forEach((v, i) => { if (nums[i] !== skip) nums[i].value = v; });
-      if (hexIn !== skip) hexIn.value = cpHex(r, g, b).toUpperCase();
+      if (hexIn !== skip) hexIn.value = cpHex(r, g, b);
     }
     const commit = () => applyColor(mode, cpHex(...cpHsv2rgb(H, S, V)), true);
     const setRgb = (r, g, b, keepHue) => {
       const [h, s, v] = cpRgb2hsv(r, g, b);
       H = keepHue && (s === 0 || v === 0) ? H : h; S = s; V = v;
     };
+    const pick = (col) => { const p = cpParse(col); if (p) { setRgb(p[0], p[1], p[2], true); render(); commit(); renderRecent(); } };
 
     const drag = (target, onMove) => {
       target.addEventListener("pointerdown", (e) => {
@@ -1590,7 +1624,7 @@
         target.setPointerCapture(e.pointerId);
         onMove(e);
         const mv = (ev) => onMove(ev);
-        const up = () => { target.removeEventListener("pointermove", mv); target.removeEventListener("pointerup", up); commit(); };
+        const up = () => { target.removeEventListener("pointermove", mv); target.removeEventListener("pointerup", up); commit(); renderRecent(); };
         target.addEventListener("pointermove", mv);
         target.addEventListener("pointerup", up);
       });
@@ -1608,43 +1642,47 @@
       render();
     });
 
-    nums.forEach((inp, i) => {
-      inp.addEventListener("input", () => {
-        inp.value = inp.value.replace(/\D/g, "").slice(0, 3);
-        const cur = cpHsv2rgb(H, S, V);
-        cur[i] = Math.max(0, Math.min(255, parseInt(inp.value || "0", 10)));
-        setRgb(cur[0], cur[1], cur[2], true);
-        render(inp);
-      });
-      inp.addEventListener("change", () => { render(); commit(); });
-      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
-    });
     hexIn.addEventListener("input", () => {
       const p = cpParse(hexIn.value);
       if (p) { setRgb(p[0], p[1], p[2], true); render(hexIn); }
     });
-    hexIn.addEventListener("change", () => { render(); commit(); });
+    hexIn.addEventListener("change", () => { render(); commit(); renderRecent(); });
     hexIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); hexIn.blur(); } });
 
-    eye.addEventListener("click", async () => {
-      if (!window.EyeDropper) { showToast("The eyedropper needs Chrome or Edge"); return; }
-      try {
-        const res = await new window.EyeDropper().open();
-        const p = cpParse(res.sRGBHex);
-        if (p) { setRgb(p[0], p[1], p[2], true); render(); commit(); }
-      } catch (_) { /* cancelled */ }
-    });
-
-    recentColors.forEach((col) => {
+    CP_PALETTE.forEach((row) => row.forEach((col) => {
       const b = document.createElement("button");
-      b.className = "cp-swatch";
+      b.type = "button";
+      b.className = "cp2-swatch";
       b.style.background = col;
       b.title = col;
-      b.addEventListener("click", () => { const p = cpParse(col); if (p) { setRgb(p[0], p[1], p[2], true); render(); commit(); } });
-      recent.appendChild(b);
-    });
+      b.addEventListener("click", () => pick(col));
+      grid.appendChild(b);
+    }));
+
+    function renderRecent() {
+      recent.innerHTML = "";
+      recentWrap.style.display = recentColors.length ? "" : "none";
+      recentColors.forEach((col) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "cp2-swatch";
+        b.style.background = col;
+        b.title = col + " (right-click to delete)";
+        b.addEventListener("click", () => pick(col));
+        b.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          openCpCtx(e.clientX, e.clientY, [["Delete color", () => {
+            recentColors = recentColors.filter((c) => c !== col);
+            try { localStorage.setItem("docly-recent-colors", JSON.stringify(recentColors)); } catch (_) {}
+            renderRecent();
+          }]]);
+        });
+        recent.appendChild(b);
+      });
+    }
 
     render();
+    renderRecent();
 
     const btn = colorBtn(mode);
     btn.classList.add("open");
@@ -1660,7 +1698,7 @@
   el("highlightBtn").addEventListener("click", () => openColorPanel("highlight"));
 
   document.addEventListener("mousedown", (e) => {
-    if (!colorPanel.contains(e.target) && !e.target.closest("#textColorBtn, #highlightBtn")) closeColorPanel();
+    if (!colorPanel.contains(e.target) && !e.target.closest("#textColorBtn, #highlightBtn, .ctx-menu")) closeColorPanel();
     if (e.target !== fontSizeInput && !sizeMenu.contains(e.target)) closeSizeMenu();
   });
   document.addEventListener("keydown", (e) => {

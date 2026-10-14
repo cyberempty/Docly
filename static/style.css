@@ -1884,3 +1884,40 @@ body.dragging-docs .coll-chip.coll-out { display: inline-flex; }
 .ctx-item:hover, .ctx-item:focus-visible { background: var(--hover); outline: none; }
 .ctx-item.danger { color: var(--danger, #c5221f); }
 @media print { .ctx-menu { display: none !important; } }
+
+
+/* ---------------- Colour panel (text colour / highlight): gradient, hue, hex and palette ---------------- */
+.color-panel.cp-v2 { width: 232px; padding: 12px; border-radius: 16px; border: 1px solid var(--border-soft); box-shadow: var(--elev-2); }
+.cp2-sv { position: relative; height: 128px; border-radius: 10px; cursor: crosshair; touch-action: none; }
+.cp2-handle {
+  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.4); pointer-events: none;
+}
+.cp2-hue {
+  position: relative; height: 12px; margin: 14px 4px 14px; border-radius: 6px; cursor: pointer; touch-action: none;
+  background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+}
+.cp2-hue-thumb {
+  position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+  background: #fff; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.4); pointer-events: none;
+}
+.cp2-hex {
+  display: block; width: 100%; box-sizing: border-box; height: 36px; padding: 0 10px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  font: 14px Consolas, "Liberation Mono", monospace; text-align: center; outline: none;
+}
+.cp2-hex:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.cp2-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px 6px; justify-items: center; margin-top: 14px; }
+.cp2-swatch {
+  width: 20px; height: 20px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(0,0,0,.14);
+}
+:root[data-theme="dark"] .cp2-swatch { border-color: rgba(255,255,255,.22); }
+.cp2-swatch:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cp2-label { margin: 14px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.cp2-recent { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp2-reset {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 12px; padding: 6px 4px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+}
+.cp2-reset:hover { background: var(--hover); }
