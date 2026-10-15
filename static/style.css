@@ -1839,85 +1839,41 @@ body.dragging-docs .coll-chip.coll-out { display: inline-flex; }
 .sel-btn.hidden { display: none; }
 
 
-/* ---------------- Full document names (one line, never wrapped) ---------------- */
-.doc-item-title, .home-card-title, .home-row-title { white-space: nowrap; }
-.coll-chip, .coll-tool, .sel-btn { white-space: nowrap; }
-.name-tip {
-  position: fixed;
-  z-index: 10000;
-  left: 0; top: 0;
-  max-width: none;
-  white-space: nowrap;          /* the whole name on a single line */
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.3;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: var(--elev-2, 0 2px 8px rgba(0,0,0,.25));
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity .12s ease;
+/* ---------------- Home cards: the name is always readable ---------------- */
+.home-card-title {
+  white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; line-height: 1.25;
 }
-.name-tip.show { opacity: 1; visibility: visible; }
-@media print { .name-tip { display: none !important; } }
-
-/* ---------------- Home cards: the date never wraps ---------------- */
-.home-card-date, .home-row-date, .doc-item-date { white-space: nowrap; }
-.home-card-date { overflow: hidden; text-overflow: ellipsis; }
-.home-card-foot { flex-wrap: nowrap; }
-.home-card-meta { flex: 1 1 auto; min-width: 0; }
+.home-card-date, .home-card-folder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-card-folder { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+.home-card.is-fav .home-card-title::before { content: "★ "; color: #f4b400; }
+.home-card .home-actions {
+  position: absolute; top: 6px; right: 6px; z-index: 3; display: none; padding: 2px 4px; border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--elev-1);
+}
+.home-card:hover .home-actions, .home-card:focus-within .home-actions { display: flex; }
+.home-actions .row-icon-btn.folder-btn { display: none; }
+.home-card:hover .home-actions .row-icon-btn.folder-btn, .home-card:focus-within .home-actions .row-icon-btn.folder-btn,
+.home-row:hover .home-actions .row-icon-btn.folder-btn, .home-row:focus-within .home-actions .row-icon-btn.folder-btn { display: inline-grid; }
+.home-card .home-actions .row-icon-btn.star:not(.active) { visibility: visible; }
 
 
-/* ---------------- Right-click menu on folders ---------------- */
-.ctx-menu {
-  position: fixed; z-index: 10001; min-width: 180px; padding: 6px 0;
-  background: var(--surface); border: 1px solid var(--border-soft); border-radius: 8px; box-shadow: var(--elev-2);
+/* ---------------- Document list (left): the name is always readable ---------------- */
+.doc-item {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 12px; row-gap: 0; align-content: center;
+  height: auto; min-height: 48px; padding: 7px 12px 7px 14px; position: relative;
 }
-.ctx-item {
-  display: block; width: 100%; padding: 8px 16px; border: 0; background: transparent; color: var(--text);
-  font: inherit; font-size: 14px; text-align: left; white-space: nowrap; cursor: pointer;
+.doc-item::before { grid-row: 1 / span 2; align-self: center; }
+.doc-item-title {
+  grid-column: 2; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; flex: none;
 }
-.ctx-item:hover, .ctx-item:focus-visible { background: var(--hover); outline: none; }
-.ctx-item.danger { color: var(--danger, #c5221f); }
-@media print { .ctx-menu { display: none !important; } }
-
-
-/* ---------------- Colour panel (text colour / highlight): gradient, hue, hex and palette ---------------- */
-.color-panel.cp-v2 { width: 232px; padding: 12px; border-radius: 16px; border: 1px solid var(--border-soft); box-shadow: var(--elev-2); }
-.cp2-sv { position: relative; height: 128px; border-radius: 10px; cursor: crosshair; touch-action: none; }
-.cp2-handle {
-  position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
-  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.4); pointer-events: none;
+.doc-item.fav .doc-item-title::before { content: "★ "; color: #f4b400; }
+.doc-item-date { grid-column: 2; display: block; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.doc-item:hover .doc-item-date { display: block; }
+.doc-item-actions {
+  position: absolute; right: 6px; bottom: 3px; display: none; padding: 0 2px; border-radius: 16px;      /* over the date line, never over the name */
+  background: var(--hover); box-shadow: var(--elev-1);
 }
-.cp2-hue {
-  position: relative; height: 12px; margin: 14px 4px 14px; border-radius: 6px; cursor: pointer; touch-action: none;
-  background: linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
-}
-.cp2-hue-thumb {
-  position: absolute; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
-  background: #fff; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.4); pointer-events: none;
-}
-.cp2-hex {
-  display: block; width: 100%; box-sizing: border-box; height: 36px; padding: 0 10px; border-radius: 10px;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  font: 14px Consolas, "Liberation Mono", monospace; text-align: center; outline: none;
-}
-.cp2-hex:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.cp2-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px 6px; justify-items: center; margin-top: 14px; }
-.cp2-swatch {
-  width: 20px; height: 20px; padding: 0; border-radius: 50%; cursor: pointer;
-  border: 1px solid rgba(0,0,0,.14);
-}
-:root[data-theme="dark"] .cp2-swatch { border-color: rgba(255,255,255,.22); }
-.cp2-swatch:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
-.cp2-label { margin: 14px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
-.cp2-recent { display: flex; flex-wrap: wrap; gap: 6px; }
-.cp2-reset {
-  display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 12px; padding: 6px 4px; border: 0; border-radius: 8px;
-  background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; text-align: left;
-}
-.cp2-reset:hover { background: var(--hover); }
+.doc-item:hover .doc-item-actions { display: flex; }
+.doc-item.active:hover .doc-item-actions { background: var(--selected); }

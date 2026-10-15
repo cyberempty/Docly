@@ -2,8 +2,6 @@
 
 **Docly** is a word processor that runs entirely on your computer: no account, no cloud, no Internet. Your documents are plain files in the `documents/` folder.
 
-> ⚠️ **WARNING: never delete the `preference.json` file** (`documents/preference.json`). It is the main file of Docly and keeps your folders and settings. If you delete it, your folder organization is lost.
-
 ![Home, light theme](images/home-light-theme.png)
 
 ![Home, dark theme](images/home-dark-theme.png)
@@ -223,7 +221,7 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 
 - **Print layout** (pages) or continuous page, ruler showing page, margins and indent markers, **document outline** (headings), **minimap** (off by default), non-printing characters, zoom 50–200%, full screen, hide the toolbar, document list on the left.
 - **Modes**: *Editing* or *Viewing* (read only).
-- **Theme**: light or dark. Theme, language, ruler, minimap, toolbar and page setup are remembered by the browser.
+- **Theme**: light or dark. Theme, language, ruler, minimap, toolbar, margins, page setup and recent colors are saved in `documents/preference.json`, next to your documents (see *Settings* below).
 
 ### Page setup
 
@@ -232,6 +230,19 @@ Paper **Letter**, **A4** or **Legal**, portrait or landscape, margins in centime
 ### Language and spelling
 
 Document language (English, Italiano, Español, Français, Deutsch, Português) and browser spell check on / off.
+
+### Preferences file
+
+Everything Docly remembers besides the documents themselves is in **one JSON file: `documents/preference.json`**. It holds the list of **folders** (including empty ones) and your **settings** (theme, language, spell check, ruler, minimap, toolbar, margins, page setup, recent colors):
+
+```json
+{
+  "folders": ["Ideas", "Work"],
+  "settings": { "docly-theme-v2": "dark", "docly-lang": "en" }
+}
+```
+
+It is updated a moment after each change and read when Docly starts. Each document also keeps its own folder name inside its `document.json`. If you move or copy the `documents` folder, or open Docly with another browser, documents, folders and settings are all still there. Files from older versions (`.folders.json`, `.settings.json`) are merged into `preference.json` automatically and then removed.
 
 ### Save and export
 
@@ -257,18 +268,16 @@ Docly/
 ├── server.py      ← local server and API (Python standard library only)
 ├── README.md
 ├── images/        ← 4 screenshots (home and editor, light and dark)
-├── static/        ← the editor: index.html, style.css, app.js
-└── documents/     ← ALL your data (relative to server.py)
-    ├── preference.json             ← main file: DO NOT DELETE
-    └── NAME_Docly/document.json    ← one folder per document
+├── static/        ← index.html, style.css, app.js, preference.js (the editor)
+└── documents/     ← your documents: one folder each, named NAME_Docly, with document.json (plus preference.json)
 ```
 
 ### How it works
 
 - **Backend**: `server.py` serves the site and saves documents to disk through a small REST API. It listens only on `127.0.0.1:8756`.
 - **Frontend**: plain HTML, CSS and JavaScript with no framework or external libraries. All exports (Word, OpenDocument, RTF, PDF, EPUB and the others) are generated in the browser.
-- **Privacy**: nothing leaves your computer and it works fully offline.
-- **Data**: all data lives in the `documents/` folder next to `server.py` (relative path), so you can move or rename the `Docly` folder and everything (documents, folders, files) stays in place. `preference.json` holds the list of folders (also empty ones); `document.json` holds id, title, content (HTML), tags, favorite, folder, header / footer settings and dates. The files in `documents/` are reachable only through the API. Backup = copy the `documents/` folder, or use Docly backup (JSON) → Import JSON.
+- **Privacy**: nothing leaves your computer and it works fully offline. Folders and preferences are saved in `documents/preference.json`.
+- **Data**: `document.json` holds id, title, content (HTML), tags, favorite, folder, header / footer settings and dates. Backup = copy the `documents/` folder (documents, folders and settings), or use Docly backup (JSON) → Import JSON.
 
 | Method | Path | Function |
 |---|---|---|
@@ -282,13 +291,12 @@ Docly/
 ### Limits and tips
 
 - **Images are not supported**: pictures are removed when you paste, drop or import content that contains them. Docly is for text, tables and lists.
-- Page size, orientation, color and margins are saved in the browser and apply to every document, not to a single one.
+- Page size, orientation, color and margins apply to every document, not to a single one.
 - The `.docx`, `.odt`, `.rtf` and `.epub` exports have not been checked in every program; open them once before sending them.
 - PDF font embedding needs Chrome or Edge and the *local fonts* permission, and works with TrueType fonts (`.ttf`); OpenType/CFF (`.otf`) and font collections (`.ttc`) fall back to the standard PDF fonts.
 - Footnotes are listed at the end of the document, not at the bottom of each page. Headers, footers and page numbers are exported to print, PDF and Word (not to the other formats).
 - A folder holds documents of one level only (no folders inside folders).
 - The instant font change applies to the whole document (`Ctrl+A`); a partial selection uses the browser's normal command.
-- Document names: while the pointer is over a document, its full name is shown on a single line (it never wraps). Upgrading from an older version? On first start Docly moves the data from `static/documents/` (and the old `.folders.json`) into `documents/` and creates `preference.json` automatically.
 - Old version still showing? Reload with `Ctrl+F5`. Port 8756 busy? Docly is already running: close the other window.
 
 ---

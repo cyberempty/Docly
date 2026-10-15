@@ -16,17 +16,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote, parse_qs, quote
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-# All user data lives in the "documents" folder next to server.py (relative path), so the whole
-# Docly folder can be moved or renamed and every document and folder moves with it.
 DOCS_DIR = os.path.join(BASE_DIR, "documents")
-LEGACY_DOCS_DIR = os.path.join(STATIC_DIR, "documents")   # previous location, migrated on start
-PREF_FILE_NAME = "preference.json"
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 HOST = "127.0.0.1"
 PORT = 8756
 VALID_TYPES = {"note"}
 META_FILE = "document.json"
-APP_TRASH_DIR = os.path.join(DOCS_DIR, ".trash")
+APP_TRASH_DIR = os.path.join(BASE_DIR, ".trash")
 
 _lock = threading.RLock()
 _index = {}
@@ -43,81 +39,80 @@ def valid_iso(value):
     except ValueError:
         return None
 
-PREF_FILE = os.path.join(DOCS_DIR, PREF_FILE_NAME)
-LEGACY_FOLDERS_FILE = os.path.join(DOCS_DIR, ".folders.json")
+# Everything the program remembers lives in ONE file, documents/preference.json:
+#   { "folders": [ ...names of the folders, even empty ones... ], "settings": { ...theme, language, page setup... } }
+PREFS_FILE = os.path.join(DOCS_DIR, "preference.json")
+LEGACY_FOLDERS_FILE = os.path.join(DOCS_DIR, ".folders.json")     # older versions
+LEGACY_SETTINGS_FILE = os.path.join(DOCS_DIR, ".settings.json")   # older versions
 
-def _read_pref():
+def _read_json(path):
     try:
-        with open(PREF_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
     except (OSError, ValueError):
-        return {}
+        return None
 
-def _write_pref(data):
-    os.makedirs(DOCS_DIR, exist_ok=True)
-    tmp = PREF_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, PREF_FILE)
+def read_prefs():
+    """Returns (folders, settings). settings is None until the browser has saved some."""
+    folders, settings = None, None
+    data = _read_json(PREFS_FILE)
+    if isinstance(data, dict):
+        if isinstance(data.get("folders"), list):
+            folders = [clean_collection(n) for n in data["folders"] if clean_collection(n)]
+        if isinstance(data.get("settings"), dict):
+            settings = data["settings"]
+        elif any(isinstance(k, str) and k.startswith("docly-") for k in data):      # flat format of the previous version
+            settings = {k: v for k, v in data.items() if isinstance(k, str) and k.startswith("docly-")}
+    if settings is None:
+        legacy = _read_json(LEGACY_SETTINGS_FILE)
+        if isinstance(legacy, dict):
+            settings = legacy
+    if folders is None:
+        legacy = _read_json(LEGACY_FOLDERS_FILE)
+        folders = [clean_collection(n) for n in legacy if clean_collection(n)] if isinstance(legacy, list) else []
+    return folders, settings
 
-def load_folders():
-    """Names of the folders (collections) that exist, including empty ones."""
-    names = _read_pref().get("folders")
-    return [clean_collection(n) for n in names if clean_collection(n)] if isinstance(names, list) else []
-
-def save_folders(names):
-    seen, out = set(), []
-    for n in names:
+def write_prefs(folders, settings):
+    seen, names = set(), []
+    for n in folders or []:
         n = clean_collection(n)
         if n and n.lower() not in seen:
             seen.add(n.lower())
-            out.append(n)
-    data = _read_pref()          # keep any other preference stored in the file
-    data["version"] = 1
-    data["folders"] = sorted(out, key=str.lower)
-    _write_pref(data)
-
-def migrate_legacy_data():
-    """Move data from the previous layout (static/documents, documents/.folders.json) into ./documents."""
+            names.append(n)
+    out = {"folders": sorted(names, key=str.lower)}
+    if settings is not None:
+        out["settings"] = settings
     os.makedirs(DOCS_DIR, exist_ok=True)
-    if os.path.isdir(LEGACY_DOCS_DIR) and os.path.abspath(LEGACY_DOCS_DIR) != os.path.abspath(DOCS_DIR):
-        for entry in os.listdir(LEGACY_DOCS_DIR):
-            src = os.path.join(LEGACY_DOCS_DIR, entry)
-            if entry == ".folders.json":
-                continue
-            dst = os.path.join(DOCS_DIR, entry)
-            if not os.path.exists(dst):
-                shutil.move(src, dst)
-        old_folders = os.path.join(LEGACY_DOCS_DIR, ".folders.json")
-        if os.path.isfile(old_folders) and not os.path.isfile(LEGACY_FOLDERS_FILE):
-            shutil.copy2(old_folders, LEGACY_FOLDERS_FILE)
-        if os.path.isfile(old_folders):
-            try:
-                os.remove(old_folders)
-            except OSError:
-                pass
+    tmp = PREFS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, PREFS_FILE)
+    for legacy in (LEGACY_FOLDERS_FILE, LEGACY_SETTINGS_FILE):    # migrated: everything is in preference.json now
         try:
-            if not os.listdir(LEGACY_DOCS_DIR):
-                os.rmdir(LEGACY_DOCS_DIR)
+            os.remove(legacy)
         except OSError:
             pass
-    # .folders.json -> preference.json
-    if os.path.isfile(LEGACY_FOLDERS_FILE):
-        try:
-            with open(LEGACY_FOLDERS_FILE, "r", encoding="utf-8") as f:
-                old = json.load(f)
-        except (OSError, ValueError):
-            old = []
-        if isinstance(old, list):
-            save_folders(load_folders() + [n for n in old if isinstance(n, str)])
-        try:
-            os.replace(LEGACY_FOLDERS_FILE, LEGACY_FOLDERS_FILE + ".migrated")
-        except OSError:
-            pass
-    # always make sure preference.json exists (never delete it!)
-    if not os.path.isfile(PREF_FILE):
-        save_folders(load_folders())
+
+def load_folders():
+    return read_prefs()[0]
+
+def save_folders(names):
+    _, settings = read_prefs()
+    write_prefs(names, settings)
+
+def load_settings():
+    return read_prefs()[1]
+
+def save_settings(values):
+    clean = {}
+    for k, v in (values or {}).items():
+        if isinstance(k, str) and re.match(r"^docly-[a-z0-9-]{1,40}$", k) and isinstance(v, str) and len(v) <= 50000:
+            clean[k] = v
+        if len(clean) >= 60:
+            break
+    folders, _ = read_prefs()
+    write_prefs(folders, clean)
+    return clean
 
 def clean_collection(value):
     """Collection (folder) name: plain text, up to 60 characters, empty = none."""
@@ -281,11 +276,7 @@ class DoclyHandler(BaseHTTPRequestHandler):
         if rel_path == "":
             rel_path = "index.html"
         full = os.path.normpath(os.path.join(STATIC_DIR, rel_path))
-        if not full.startswith(os.path.normpath(STATIC_DIR) + os.sep) and full != os.path.normpath(STATIC_DIR):
-            self._send_error_json(403, "Forbidden")
-            return
-        # user data is only reachable through the API, never as a plain file
-        if full.startswith(os.path.normpath(DOCS_DIR) + os.sep) or full == os.path.normpath(DOCS_DIR):
+        if not full.startswith(os.path.normpath(STATIC_DIR)):
             self._send_error_json(403, "Forbidden")
             return
         if not os.path.isfile(full):
@@ -296,6 +287,12 @@ class DoclyHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
         qs = parse_qs(parsed.query)
+
+        if path == "/api/settings":
+            with _lock:
+                data = load_settings()
+            self._send_json(200, {"settings": data})
+            return
 
         if path == "/api/documents":
             with _lock:
@@ -357,6 +354,17 @@ class DoclyHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
 
+        if path == "/api/settings":
+            body = self._read_json_body()
+            values = body.get("settings") if isinstance(body, dict) else None
+            if not isinstance(values, dict):
+                self._send_error_json(400, "Invalid settings")
+                return
+            with _lock:
+                saved = save_settings(values)
+            self._send_json(200, {"ok": True, "count": len(saved)})
+            return
+
         if path == "/api/documents":
             body = self._read_json_body()
             if body is None:
@@ -399,6 +407,17 @@ class DoclyHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
+
+        if path == "/api/settings":
+            body = self._read_json_body()
+            values = body.get("settings") if isinstance(body, dict) else None
+            if not isinstance(values, dict):
+                self._send_error_json(400, "Invalid settings")
+                return
+            with _lock:
+                saved = save_settings(values)
+            self._send_json(200, {"ok": True, "count": len(saved)})
+            return
 
         if path == "/api/collections/create":
             body = self._read_json_body()
@@ -626,12 +645,10 @@ def open_browser_delayed():
 def main():
     global _index
     ensure_docs_dir()
-    migrate_legacy_data()
     _index = build_index()
     server = ThreadingHTTPServer((HOST, PORT), DoclyHandler)
     print(f"Open browser at: http://{HOST}:{PORT}")
     print(f"Documents saved in: {DOCS_DIR}")
-    print(f"Main file (do not delete): {PREF_FILE}")
     if "--no-browser" not in sys.argv:
         threading.Thread(target=open_browser_delayed, daemon=True).start()
     try:
