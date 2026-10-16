@@ -210,8 +210,25 @@
     renderList();
   }
 
+  // Last time each document was opened (kept in the preferences file, like the other settings).
+  // The lists always show the document opened last first.
+  function openedMap() {
+    try { const o = JSON.parse(localStorage.getItem("docly-opened") || "{}"); return o && typeof o === "object" ? o : {}; } catch (_) { return {}; }
+  }
+  function markOpened(id) {
+    const m = openedMap();
+    m[id] = Date.now();
+    const ids = Object.keys(m);
+    if (ids.length > 500) ids.sort((a, b) => m[b] - m[a]).slice(500).forEach((k) => delete m[k]);
+    try { localStorage.setItem("docly-opened", JSON.stringify(m)); } catch (_) {}
+  }
+  function lastTouched(d, m) {                      // the later of: last time opened, last time modified
+    const u = Date.parse(d.updatedAt || "") || 0;
+    return Math.max(u, m[d.id] || 0);
+  }
   function filteredDocuments() {
-    let docs = state.documents.slice();
+    const opened = openedMap();
+    let docs = state.documents.slice().sort((a, b) => lastTouched(b, opened) - lastTouched(a, opened));
     switch (state.filter) {
       case "recent":
         docs = docs.slice(0, 15);
@@ -428,11 +445,13 @@
         foot.appendChild(mk("span", "home-doc-icon"));
         const meta = mk("div", "home-card-meta");
         meta.appendChild(mk("div", "home-card-title", doc.title || "Untitled"));
-        meta.appendChild(mk("div", "home-card-date", fmtDate(doc.updatedAt)));
+        const sub = mk("div", "home-card-sub");        // date on the left, buttons (folder, star, delete) on the right, under the name
+        sub.appendChild(mk("div", "home-card-date", fmtDate(doc.updatedAt)));
+        sub.appendChild(homeActions(doc));
+        meta.appendChild(sub);
         if (doc.collection) meta.appendChild(mk("div", "home-card-folder", "📁 " + doc.collection));
         foot.appendChild(meta);
         card.appendChild(foot);
-        card.appendChild(homeActions(doc));          // buttons float over the thumbnail, so they never squeeze the name
         card.classList.toggle("is-fav", !!doc.favorite);
         card.title = doc.title || "Untitled";
         card.appendChild(selectCheck(doc));
@@ -851,6 +870,7 @@
     if (state.dirty) await doSave(true);
 
     const doc = await api("/api/documents/" + encodeURIComponent(id));
+    markOpened(doc.id);
     state.currentId = doc.id;
     state.currentDoc = doc;
     state.dirty = false;
@@ -872,6 +892,7 @@
 
     renderTags();
 
+    closeFindBar(false);
     richEditor.innerHTML = (doc.content || "").replace(/ class="cell-sel"/g, "");
     richEditor.querySelectorAll("img").forEach((img) => img.remove());   // images are not supported
     if (window.__doclyAfterOpen) window.__doclyAfterOpen();
@@ -882,6 +903,7 @@
   }
 
   function closeEditor() {
+    closeFindBar(false);
     state.currentId = null;
     state.currentDoc = null;
     renderHeaderFooter(); applyPrintHF();
@@ -1779,7 +1801,7 @@
 </head>
 <body>
 <h1>${title}</h1>
-${contentHtml()}
+${exportFieldsHtml(false)}
 </body>
 </html>`;
     downloadBlob(new Blob([page], { type: "text/html;charset=utf-8" }), exportName("html"));
@@ -1792,15 +1814,16 @@ ${contentHtml()}
     const m = s.match(/^(\s*)([\s\S]*?)(\s*)$/);
     return m[2] ? m[1] + mark + m[2] + mark + m[3] : s;
   }
-  function mdInline(n) {
+  function mdInlineNode(n) {
     if (n.nodeType === 3) return n.nodeValue.replace(/\u200b/g, "").replace(/\s+/g, " ").replace(/([\\`*_\[\]])/g, "\\$1");
     if (n.nodeType !== 1) return "";
     const tag = n.tagName;
     if (tag === "BR") return "  \n";
     if (tag === "IMG") return "";
     if (tag === "A" && n.hasAttribute("data-bookmark")) return n.id ? `<a id="${n.id}"></a>` : "";
+    if (tag === "SPAN" && n.classList && n.classList.contains("form-field")) return FF_PLAIN[n.getAttribute("data-ff")] || FF_PLAIN.text;
     if (tag === "CODE") return n.textContent ? "`" + n.textContent + "`" : "";
-    let s = Array.from(n.childNodes).map(mdInline).join("");
+    let s = Array.from(n.childNodes).map(mdInlineNode).join("");
     const css = n.style || {};
     const deco = css.textDecorationLine || css.textDecoration || "";
     const bold = tag === "B" || tag === "STRONG" || css.fontWeight === "bold" || parseInt(css.fontWeight, 10) >= 600;
@@ -1826,7 +1849,7 @@ ${contentHtml()}
     };
     for (const n of container.childNodes) {
       if (n.nodeType === 3 || (n.nodeType === 1 && !MD_BLOCK.has(n.tagName))) {
-        buf += mdInline(n);
+        buf += mdInlineNode(n);
       } else if (n.nodeType === 1) {
         flush();
         const b = mdBlock(n);
@@ -1844,7 +1867,7 @@ ${contentHtml()}
       let text = "";
       for (const n of li.childNodes) {
         if (n.nodeType === 1 && (n.tagName === "UL" || n.tagName === "OL")) nested.push(n);
-        else text += mdInline(n);
+        else text += mdInlineNode(n);
       }
       lines.push("   ".repeat(depth) + (ordered ? `${i + 1}. ` : "- ") + text.trim().replace(/\n/g, " "));
       nested.forEach((nl) => lines.push(mdList(nl, depth + 1)));
@@ -1853,7 +1876,7 @@ ${contentHtml()}
   }
   function mdTable(t) {
     const rows = Array.from(t.rows).map((r) =>
-      Array.from(r.cells).map((c) => mdInline(c).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim() || " ")
+      Array.from(r.cells).map((c) => mdInlineNode(c).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ").trim() || " ")
     );
     if (!rows.length) return "";
     const cols = Math.max(...rows.map((r) => r.length));
@@ -1862,7 +1885,7 @@ ${contentHtml()}
   }
   function mdBlock(n) {
     const tag = n.tagName;
-    if (/^H[1-6]$/.test(tag)) return (n.id ? `<a id="${n.id}"></a>\n` : "") + "#".repeat(+tag[1]) + " " + mdInline(n).trim();
+    if (/^H[1-6]$/.test(tag)) return (n.id ? `<a id="${n.id}"></a>\n` : "") + "#".repeat(+tag[1]) + " " + mdInlineNode(n).trim();
     if (tag === "UL" || tag === "OL") return mdList(n, 0);
     if (tag === "BLOCKQUOTE") return mdBlocks(n).split("\n").map((l) => "> " + l).join("\n");
     if (tag === "PRE") return "```\n" + n.textContent.replace(/\n$/, "") + "\n```";
@@ -1933,6 +1956,32 @@ ${contentHtml()}
       if (css.verticalAlign === "sub") s.sub = true;
     }
     return s;
+  }
+
+  // ---- Form fields: placeholders in the editor, fillable boxes (AcroForm) in the exported PDF
+  const FF_DIMS = { text: { w: 150, h: 18 }, textarea: { w: 300, h: 54 }, check: { w: 12, h: 12 }, select: { w: 120, h: 18 } };   // size in PDF points (the editor uses the same size)
+  const FF_LABEL = { text: "Text field", textarea: "Text area", check: "Checkbox", select: "Dropdown list" };
+  const FF_PLAIN = { text: "[ ........ ]", textarea: "[ ........ ]", check: "[ ]", select: "[ v ]" };   // what the other export formats show
+  const FF_PREFIX = { text: "text", textarea: "textarea", check: "check", select: "select" };
+
+  // Web page and EPUB exports: real controls (web page) or plain marks (EPUB) instead of the dashed placeholders
+  function exportFieldsHtml(asText) {
+    const box = document.createElement("div");
+    box.innerHTML = contentHtml();
+    box.querySelectorAll(".form-field").forEach((f) => {
+      const kind = f.getAttribute("data-ff") || "text", name = f.getAttribute("data-name") || "";
+      let c;
+      if (asText) c = document.createTextNode(FF_PLAIN[kind] || FF_PLAIN.text);
+      else if (kind === "textarea") { c = document.createElement("textarea"); c.setAttribute("rows", "3"); c.setAttribute("cols", "40"); }
+      else if (kind === "check") { c = document.createElement("input"); c.setAttribute("type", "checkbox"); }
+      else if (kind === "select") {
+        c = document.createElement("select");
+        (f.getAttribute("data-options") || "").split("|").filter(Boolean).forEach((o) => { const op = document.createElement("option"); op.textContent = o; c.appendChild(op); });
+      } else { c = document.createElement("input"); c.setAttribute("type", "text"); }
+      if (c.nodeType === 1) c.setAttribute("name", name);
+      f.replaceWith(c);
+    });
+    return box.innerHTML;
   }
 
   // Walks the editor DOM and returns a flat list of blocks:
@@ -2006,6 +2055,11 @@ ${contentHtml()}
       if (tag === "BR") { ensure(props).runs.push({ br: true }); return; }
       if (tag === "A" && n.hasAttribute("data-bookmark")) {      // a bookmark: a spot that links can jump to
         if (n.id) ensure(props).runs.push({ anchor: n.id });
+        return;
+      }
+      if (tag === "SPAN" && n.classList.contains("form-field")) {      // a form field placeholder
+        const kind = FF_DIMS[n.getAttribute("data-ff")] ? n.getAttribute("data-ff") : "text";
+        ensure(props).runs.push({ ...st, text: FF_PLAIN[kind], field: { kind, name: n.getAttribute("data-name") || "", options: (n.getAttribute("data-options") || "").split("|").filter(Boolean) } });
         return;
       }
       if (tag === "IMG") return;
@@ -2510,7 +2564,7 @@ ${contentHtml()}
     const title = escXml(state.currentDoc.title || "Document");
     const doc = document.implementation.createHTMLDocument("");
     const box = doc.createElement("div");
-    box.innerHTML = contentHtml();
+    box.innerHTML = exportFieldsHtml(true);
 
     const toc = [];
     box.querySelectorAll("h1, h2, h3").forEach((h, i) => {
@@ -2725,6 +2779,56 @@ ${contentHtml()}
     ];
   }
 
+  // ---- PDF form fields (AcroForm): every placeholder becomes a real, clickable box in the exported file
+  function pdfStr(v) {                                  // PDF text string: plain ASCII, or UTF-16BE in hex for other characters
+    v = String(v);
+    if (/^[\x20-\x7e]*$/.test(v)) return "(" + pdfEscape(v) + ")";
+    let hex = "FEFF";
+    for (let i = 0; i < v.length; i++) hex += v.charCodeAt(i).toString(16).toUpperCase().padStart(4, "0");
+    return "<" + hex + ">";
+  }
+  function pdfFieldName(raw, kind, used) {              // field names must be unique and cannot contain "." (it means a sub-field)
+    const base = String(raw || "").replace(/[.\s]+/g, " ").trim() || FF_PREFIX[kind] || "field";
+    let nm = base, k = 2;
+    while (used.has(nm)) nm = base + "_" + k++;
+    used.add(nm);
+    return nm;
+  }
+  // Adds the objects of one field (appearance streams + the widget itself) and returns the widget's object number.
+  // a = { rect: [x1, y1, x2, y2], field: { kind, name, options } }; ctx = { addObj(obj) -> number, used: Set, zapf() -> number }
+  function pdfAddWidget(a, pageObj, helvObj, ctx) {
+    const f = a.field, kind = f.kind, w = a.rect[2] - a.rect[0], h = a.rect[3] - a.rect[1];
+    const n2 = (v) => Number(v).toFixed(2);
+    const bbox = "[0 0 " + n2(w) + " " + n2(h) + "]";
+    const frame = "q 1 1 1 rg 0 0 " + n2(w) + " " + n2(h) + " re f 0.4 0.4 0.4 RG 0.75 w 0.375 0.375 " + n2(w - 0.75) + " " + n2(h - 0.75) + " re S Q";   // white background + border
+    const form = (content, zapf) => ({
+      stream: pdfBytes(content),
+      extra: " /Type /XObject /Subtype /Form /BBox " + bbox + " /Resources << /Font << /Helv " + helvObj + " 0 R" + (zapf ? " /ZaDb " + zapf + " 0 R" : "") + " >> >>",
+    });
+    const name = pdfFieldName(f.name, kind, ctx.used);
+    const common = "/Type /Annot /Subtype /Widget /T " + pdfStr(name) + " /Rect [" + a.rect.map((v) => n2(v)).join(" ") + "] /F 4 /P " + pageObj + " 0 R" +
+      " /MK << /BC [0.4 0.4 0.4] /BG [1 1 1]" + (kind === "check" ? " /CA (4)" : "") + " >> /BS << /W 1 /S /S >>";
+    if (kind === "check") {
+      const zapf = ctx.zapf();
+      const sz = Math.max(6, h * 0.8);
+      const mark = "q BT /ZaDb " + n2(sz) + " Tf 0 g " + n2((w - sz * 0.846) / 2) + " " + n2((h - sz * 0.7) / 2) + " Td (4) Tj ET Q";   // ZapfDingbats check mark
+      const off = ctx.addObj(form(frame, 0));
+      const on = ctx.addObj(form(frame + "\n" + mark, zapf));
+      return ctx.addObj({ dict: "<< " + common + " /FT /Btn /V /Off /AS /Off /DA (/ZaDb 0 Tf 0 g) /AP << /N << /Yes " + on + " 0 R /Off " + off + " 0 R >> >> >>" });
+    }
+    let content = "/Tx BMC\n" + frame;
+    let extra = " /FT /Tx /DA (/Helv 11 Tf 0 g)" + (kind === "textarea" ? " /Ff 4096" : "");        // 4096 = multiline
+    if (kind === "select") {
+      const aw = Math.min(14, w / 3), cx = w - aw / 2 - 0.4, cy = h / 2;
+      content += "\n0.9 g " + n2(w - aw - 0.75) + " 0.75 " + n2(aw) + " " + n2(h - 1.5) + " re f 0.2 g " +
+        n2(cx - 3) + " " + n2(cy + 1.5) + " m " + n2(cx + 3) + " " + n2(cy + 1.5) + " l " + n2(cx) + " " + n2(cy - 2.5) + " l f";
+      extra = " /FT /Ch /Ff 131072 /Opt [" + (f.options || []).map((o) => pdfStr(o)).join(" ") + "] /DA (/Helv 11 Tf 0 g)";   // 131072 = drop-down list
+    }
+    content += "\nEMC";
+    const ap = ctx.addObj(form(content, 0));
+    return ctx.addObj({ dict: "<< " + common + extra + " /AP << /N " + ap + " 0 R >> >>" });
+  }
+
   async function buildPdf(fontProvider) {
     const model = exportModel();
     const ps = pageSetup();
@@ -2778,10 +2882,15 @@ ${contentHtml()}
 
     // ---- text -> styled tokens (words and spaces), then wrapped into lines
     const isMono = (p, r) => !!(p && p.code) || /courier|mono|consolas/i.test((r && r.font) || "");
-    function tokenize(runs, p, baseSize) {
+    function tokenize(runs, p, baseSize, maxW) {
       const tokens = [];
       for (const r of runs) {
         if (r.br) { tokens.push({ br: true }); continue; }
+        if (r.field) {          // a form field placeholder: reserves the space of the fillable box
+          const d = FF_DIMS[r.field.kind] || FF_DIMS.text;
+          tokens.push({ field: r.field, text: "", w: Math.min(d.w, maxW || d.w), h: d.h, size: r.size || baseSize });
+          continue;
+        }
         if (r.anchor) { tokens.push({ anchor: r.anchor, text: "", w: 0, size: baseSize }); continue; }
         const mono = isMono(p, r);
         const fam = p && p.code && !/courier|mono|consolas/i.test(r.font || "") ? "Courier New" : (r.font || "Arial");
@@ -2811,9 +2920,9 @@ ${contentHtml()}
     function mergeTokens(line) {
       const segs = [];
       for (const t of line) {
-        if (t.anchor) { segs.push(t); continue; }
+        if (t.anchor || t.field) { segs.push(t); continue; }
         const last = segs[segs.length - 1];
-        if (last && !last.anchor && sameStyle(last, t)) { last.text += t.text; last.w += t.w; }
+        if (last && !last.anchor && !last.field && sameStyle(last, t)) { last.text += t.text; last.w += t.w; }
         else segs.push({ ...t });
       }
       return segs;
@@ -2822,6 +2931,12 @@ ${contentHtml()}
     function drawLine(line, x, yy) {
       for (const sg of mergeTokens(line)) {
         if (sg.anchor) { anchors.set(sg.anchor, { page: pages.length, y: yy + sg.size }); continue; }
+        if (sg.field) {         // the box sits on the text line, like in the editor (its bottom just under the baseline)
+          const bottom = yy - sg.size * 0.22;
+          annots.push({ rect: [x, bottom, x + sg.w, bottom + sg.h], field: sg.field });
+          x += sg.w;
+          continue;
+        }
         if (!sg.text) continue;
         const col = sg.link ? pdfColor("1155CC") : (sg.color ? pdfColor(sg.color) : "0 0 0");
         if (sg.bg) content.push(pdfColor(sg.bg) + " rg " + x.toFixed(2) + " " + (yy - sg.size * 0.22).toFixed(2) + " " + sg.w.toFixed(2) + " " + (sg.size * 1.15).toFixed(2) + " re f");
@@ -2834,6 +2949,7 @@ ${contentHtml()}
     }
     const lineSize = (line) => line.reduce((m, t) => Math.max(m, t.size || 0), 0) || 13;
     const lineWidth = (line) => line.reduce((s, t) => s + (t.w || 0), 0);
+    const lineFieldH = (line) => line.reduce((m, t) => Math.max(m, t.h || 0), 0);     // tallest form field on the line
 
     function drawParagraph(p) {
       const baseSize = 13;
@@ -2843,7 +2959,7 @@ ${contentHtml()}
       const hang = p.list ? 18 : 0;
       const left = marginLeft + indent + level * 20;
       const availW = usableW - indent - level * 20 - (p.quote ? 6 : 0);
-      let tokens = tokenize(p.runs || [], p, baseSize);
+      let tokens = tokenize(p.runs || [], p, baseSize, availW);
       if (p.list) {
         const marker = p.list.ordered ? p.list.index + "." : "\u2022";
         tokens.unshift({ text: marker, w: foWidth(fontFor("Arial", false, false, false), marker, baseSize), size: baseSize, b: false, i: false, u: false, s: false, color: "", bg: "", link: "", mono: false, marker: true, fo: fontFor("Arial", false, false, false) });
@@ -2852,8 +2968,9 @@ ${contentHtml()}
       const lines = wrapTokens(tokens, availW + hang, 0);
       if (!lines.length) lines.push([]);
       lines.forEach((ln, li) => {
-        const size = lineSize(ln);
-        const lh = size * (p.line || 1.2) + 3;
+        const size = lineSize(ln), fh = lineFieldH(ln);
+        const asc = fh ? Math.max(size, fh - size * 0.22 + 1) : size;          // room above the baseline for a tall field
+        const lh = fh ? Math.max(size * (p.line || 1.2) + 3, asc + size * 0.22 + 4) : size * (p.line || 1.2) + 3;
         ensureSpace(lh);
         let x = left - (li === 0 ? hang : 0) + (li === 0 ? firstIndent : 0);
         // list items: marker hangs in the margin, text lines up under it
@@ -2861,7 +2978,7 @@ ${contentHtml()}
         const w = lineWidth(ln);
         if (p.align === "center") x = left + (availW - w) / 2;
         else if (p.align === "right") x = left + availW - w;
-        const base = y - size;
+        const base = y - asc;
         if (p.code) content.push("0.953 0.953 0.953 rg " + (left - 4).toFixed(2) + " " + (y - lh).toFixed(2) + " " + (availW + 8).toFixed(2) + " " + lh.toFixed(2) + " re f");
         if (p.quote) content.push("0.6 0.6 0.6 RG 1.5 w " + (marginLeft + indent - 8).toFixed(2) + " " + (y - lh).toFixed(2) + " m " + (marginLeft + indent - 8).toFixed(2) + " " + y.toFixed(2) + " l S");
         drawLine(ln, x, base);
@@ -2872,19 +2989,20 @@ ${contentHtml()}
 
     function drawTable(t) {
       const colW = usableW / t.cols;
+      const lineH = (l) => { const fh = lineFieldH(l); return Math.max(lineSize(l) * 1.2 + 4, fh ? fh + 8 : 0); };
       for (const row of t.rows) {
         const cells = row.map((cellModel) => {
           const lines = [];
           for (const cp of cellModel) {
             if (cp.type !== "p") continue;
-            const toks = tokenize(cp.runs || [], cp, 12);
+            const toks = tokenize(cp.runs || [], cp, 12, colW - 10);
             const ls = wrapTokens(toks, colW - 10, 0);
             (ls.length ? ls : [[]]).forEach((l) => lines.push(l));
           }
           return lines;
         });
         while (cells.length < t.cols) cells.push([]);
-        const heights = cells.map((ls) => ls.reduce((h, l) => h + lineSize(l) * 1.2 + 4, 0));
+        const heights = cells.map((ls) => ls.reduce((h, l) => h + lineH(l), 0));
         const rowH = Math.max(18, ...heights) + 6;
         ensureSpace(rowH);
         const top = y;
@@ -2898,9 +3016,10 @@ ${contentHtml()}
         cells.forEach((ls, ci) => {
           let ty = top - 4;
           ls.forEach((l) => {
-            const size = lineSize(l);
-            drawLine(l, marginLeft + ci * colW + 5, ty - size);
-            ty -= size * 1.2 + 4;
+            const size = lineSize(l), fh = lineFieldH(l);
+            const asc = fh ? Math.max(size, fh - size * 0.22 + 1) : size;
+            drawLine(l, marginLeft + ci * colW + 5, ty - asc);
+            ty -= lineH(l);
           });
         });
         y = top - rowH;
@@ -2945,10 +3064,19 @@ ${contentHtml()}
     const fontObj = (i) => 3 + N + i;                 // font objects follow the page objects
     const contentObj = (i) => 3 + N + FONTS.length + i;
     let nextObj = 3 + N + FONTS.length + N;           // annotation objects follow the content streams
-    const annotObjs = [];                             // { dict }
-    const pageAnnotRefs = pages.map((pg) => {
+    const annotObjs = [];                             // { dict } or { stream, extra }, in object-number order
+    const addObj = (o) => { annotObjs.push(o); return nextObj++; };
+    let zapfObj = 0;                                  // ZapfDingbats font (check marks), added only when a checkbox exists
+    const wctx = { used: new Set(), addObj, zapf: () => zapfObj || (zapfObj = addObj({ dict: "<< /Type /Font /Subtype /Type1 /BaseFont /ZapfDingbats >>" })) };
+    const widgetRefs = [], pageHasField = [];         // every form field (for /AcroForm) and the pages that have some
+    const pageAnnotRefs = pages.map((pg, pi) => {
       const refs = [];
       pg.annots.forEach((a) => {
+        if (a.field) {                                // a fillable box
+          const ref = pdfAddWidget(a, 3 + pi, fontObj(0), wctx) + " 0 R";
+          refs.push(ref); widgetRefs.push(ref); pageHasField[pi] = true;
+          return;
+        }
         let action;
         if (a.link.charAt(0) === "#") {
           const dest = anchors.get(a.link.slice(1));
@@ -2957,8 +3085,7 @@ ${contentHtml()}
         } else {
           action = "/A << /S /URI /URI (" + pdfEscape(encodeURI(a.link)) + ") >>";
         }
-        annotObjs.push("<< /Type /Annot /Subtype /Link /Rect [" + a.rect.map((n) => n.toFixed(2)).join(" ") + "] /Border [0 0 0] " + action + " >>");
-        refs.push(nextObj++ + " 0 R");
+        refs.push(addObj({ dict: "<< /Type /Annot /Subtype /Link /Rect [" + a.rect.map((n) => n.toFixed(2)).join(" ") + "] /Border [0 0 0] " + action + " >>" }) + " 0 R");
       });
       return refs;
     });
@@ -2966,17 +3093,20 @@ ${contentHtml()}
     const embList = Array.from(embUsed.values());      // embedded fonts: 5 objects each, after the annotations
     const embBase = nextObj;
     const objs = [];                                  // { dict, stream? } in object-number order
-    objs.push({ dict: "<< /Type /Catalog /Pages 2 0 R >>" });
+    const acroForm = widgetRefs.length
+      ? " /AcroForm << /Fields [" + widgetRefs.join(" ") + "] /NeedAppearances true /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv " + fontObj(0) + " 0 R" + (zapfObj ? " /ZaDb " + zapfObj + " 0 R" : "") + " >> >> >>"
+      : "";
+    objs.push({ dict: "<< /Type /Catalog /Pages 2 0 R" + acroForm + " >>" });
     objs.push({ dict: "<< /Type /Pages /Kids [" + pages.map((_, i) => (3 + i) + " 0 R").join(" ") + "] /Count " + N + " >>" });
     const fontRes = FONTS.map(([, nm], i) => "/" + nm + " " + fontObj(i) + " 0 R").join(" ") +
       embList.map((e, k) => " /" + e.id + " " + (embBase + 5 * k) + " 0 R").join("");
     pages.forEach((_, i) => {
       const an = pageAnnotRefs[i].length ? " /Annots [" + pageAnnotRefs[i].join(" ") + "]" : "";
-      objs.push({ dict: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageW + " " + pageH + "] /Resources << /Font << " + fontRes + " >> >> /Contents " + contentObj(i) + " 0 R" + an + " >>" });
+      objs.push({ dict: "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pageW + " " + pageH + "] /Resources << /Font << " + fontRes + " >> >> /Contents " + contentObj(i) + " 0 R" + an + (pageHasField[i] ? " /Tabs /S" : "") + " >>" });
     });
     FONTS.forEach(([base]) => objs.push({ dict: "<< /Type /Font /Subtype /Type1 /BaseFont /" + base + " /Encoding /WinAnsiEncoding >>" }));
     pages.forEach((pg) => objs.push({ stream: pdfBytes(pg.content.join("\n")) }));
-    annotObjs.forEach((d) => objs.push({ dict: d }));
+    annotObjs.forEach((o) => objs.push(o));
     for (let k = 0; k < embList.length; k++) {
       const parts5 = embeddedFontObjects(embList[k], embBase + 5 * k);
       const ff = parts5.find((o) => o.fontFile);
@@ -4877,6 +5007,66 @@ ${contentHtml()}
     const a = richEditor.querySelector(idSel(id));
     if (a) showBookmarkCard(a, true);
   }
+  /* ---------------- Form fields: placeholders for fillable PDF boxes ---------------- */
+  // In the editor a field is a dashed box with a label (not writable, just a reminder of where the box will be).
+  // It is saved as a plain <span class="form-field" data-ff data-name data-options> in the document HTML.
+  function ffCleanName(v) { return String(v || "").replace(/[.|"'<>]/g, "_").replace(/\s+/g, " ").trim().slice(0, 60); }
+  function ffParseOptions(v) {
+    const seen = new Set();
+    return String(v || "").split(/[,;\n]/).map((x) => x.trim().replace(/\|/g, "/")).filter((x) => x && !seen.has(x) && seen.add(x)).slice(0, 60);
+  }
+  const ffTitle = (f) => FF_LABEL[f.getAttribute("data-ff")] + ": " + f.getAttribute("data-name") + " (double-click to edit)";
+  async function askFieldProps(kind, name, options) {
+    const nm = await showModal(FF_LABEL[kind], "Field name (shown in the PDF form):", name, true);
+    if (nm === null) return null;
+    let opts = [];
+    if (kind === "select") {
+      const o = await showModal(FF_LABEL[kind], "Options, separated by commas:", options || "Option 1, Option 2, Option 3", true);
+      if (o === null) return null;
+      opts = ffParseOptions(o);
+      if (!opts.length) { showToast("Add at least one option"); return null; }
+    }
+    return { name: ffCleanName(nm), options: opts };
+  }
+  async function insertFormField(kind) {
+    if (!needOpenDoc()) return;
+    if (!isEditing()) { showToast("Viewing mode: switch to Editing in View > Mode"); return; }
+    const used = new Set(Array.from(richEditor.querySelectorAll(".form-field")).map((f) => f.getAttribute("data-name")));
+    let n = 1; while (used.has(FF_PREFIX[kind] + n)) n++;
+    const props = await askFieldProps(kind, FF_PREFIX[kind] + n, "");
+    if (!props) return;
+    const f = document.createElement("span");
+    f.className = "form-field";
+    f.setAttribute("data-ff", kind);
+    f.setAttribute("data-name", props.name || FF_PREFIX[kind] + n);
+    if (kind === "select") f.setAttribute("data-options", props.options.join("|"));
+    f.setAttribute("contenteditable", "false");
+    f.title = ffTitle(f);
+    focusRich(); restoreSelection();
+    // inserted directly at the caret (like bookmarks): insertHTML would split the paragraph around a non-editable box
+    const sel = window.getSelection();
+    let r = sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (!r || !richEditor.contains(r.startContainer)) { r = document.createRange(); r.selectNodeContents(richEditor); r.collapse(false); }
+    r.collapse(false);
+    const tail = document.createTextNode("\u200b");        // keeps a caret position after the box
+    r.insertNode(tail); r.insertNode(f);
+    const after = document.createRange(); after.setStart(tail, 1); after.collapse(true);
+    sel.removeAllRanges(); sel.addRange(after);
+    scheduleSave();
+  }
+  richEditor.addEventListener("dblclick", async (e) => {      // double-click a placeholder to rename it / change its options
+    const f = e.target && e.target.closest ? e.target.closest(".form-field") : null;
+    if (!f || !isEditing()) return;
+    e.preventDefault();
+    const kind = f.getAttribute("data-ff") || "text";
+    const props = await askFieldProps(kind, f.getAttribute("data-name") || "", (f.getAttribute("data-options") || "").split("|").join(", "));
+    if (!props) return;
+    f.setAttribute("data-name", props.name || f.getAttribute("data-name") || FF_PREFIX[kind]);
+    if (kind === "select") f.setAttribute("data-options", props.options.join("|"));
+    f.title = ffTitle(f);
+    scheduleSave();
+  });
+
   function insertInternalLink() {
     if (!needOpenDoc()) return;
     const t = listLinkTargets();
@@ -5295,19 +5485,175 @@ ${contentHtml()}
     }
   });
 
-  /* ---------------- Find / replace (next / previous) ---------------- */
+  /* ---------------- Find in document: search bar with match counter and highlighting ---------------- */
+  // Matches are marked with the CSS Custom Highlight API: nothing is added to the document, so nothing is
+  // saved or exported. All matches are yellow, the current one is orange (see style.css).
   let lastFind = "";
-  async function findInDoc(backwards) {
-    if (!needOpenDoc()) return;
-    if (!lastFind || backwards === undefined) {
-      const t = await showModal("Find", "Find text:", lastFind, true);
-      if (!t) return;
-      lastFind = t;
-      backwards = false;
-    }
-    focusRich();
-    if (!window.find(lastFind, false, !!backwards, true, false, false, false)) showToast("No matches found");
+  const FIND_HL = typeof CSS !== "undefined" && !!CSS.highlights && typeof Highlight !== "undefined";
+  var fb = { bar: null, input: null, count: null, open: false, matches: [], idx: -1, anchor: null, timer: 0 };
+  const FB_ICON = {
+    up: '<svg viewBox="0 0 24 24"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>',
+    down: '<svg viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>',
+    close: '<svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
+  };
+  function buildFindBar() {
+    if (fb.bar) return;
+    const bar = document.createElement("div");
+    bar.id = "findBar"; bar.className = "find-bar hidden"; bar.setAttribute("role", "search");
+    bar.innerHTML = '<input type="text" class="fb-input" placeholder="Find in document" aria-label="Find in document" autocomplete="off" spellcheck="false">' +
+      '<span class="fb-count" aria-live="polite"></span><span class="fb-sep"></span>' +
+      '<button type="button" class="fb-btn" data-act="prev" title="Previous match (Shift+Enter)" aria-label="Previous match">' + FB_ICON.up + '</button>' +
+      '<button type="button" class="fb-btn" data-act="next" title="Next match (Enter)" aria-label="Next match">' + FB_ICON.down + '</button>' +
+      '<button type="button" class="fb-btn" data-act="close" title="Close (Esc)" aria-label="Close">' + FB_ICON.close + '</button>';
+    editorWrap.appendChild(bar);
+    fb.bar = bar; fb.input = bar.querySelector(".fb-input"); fb.count = bar.querySelector(".fb-count");
+    bar.addEventListener("mousedown", (e) => { if (e.target.closest(".fb-btn")) e.preventDefault(); });   // keep the caret in the box
+    bar.addEventListener("click", (e) => {
+      const b = e.target.closest(".fb-btn");
+      if (!b) return;
+      if (b.dataset.act === "close") closeFindBar(true);
+      else { stepFind(b.dataset.act === "next" ? 1 : -1); fb.input.focus(); }
+    });
+    fb.input.addEventListener("input", () => { lastFind = fb.input.value; runFind(false); });
+    fb.input.addEventListener("keydown", (e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeFindBar(true); }
+      else if (e.key === "Enter") { e.preventDefault(); stepFind(e.shiftKey ? -1 : 1); }
+      else if (mod && e.code === "KeyG") { e.preventDefault(); e.stopPropagation(); stepFind(e.shiftKey ? -1 : 1); }
+      else if (mod && !e.shiftKey && e.code === "KeyF") { e.preventDefault(); e.stopPropagation(); fb.input.select(); }
+    });
   }
+
+  // The text of the page as one string (a "\n" between blocks, so a match never crosses paragraphs or table
+  // cells), plus where every text node starts: a match can span bold / italic / link pieces of the same word.
+  const FIND_BLOCK = "p,div,h1,h2,h3,h4,h5,h6,li,blockquote,pre,td,th";
+  function findCorpus() {
+    const nodes = [], starts = [];
+    let text = "", prev = null;
+    const w = document.createTreeWalker(richEditor, NodeFilter.SHOW_TEXT);
+    while (w.nextNode()) {
+      const n = w.currentNode;
+      if (n.parentNode && n.parentNode.closest && n.parentNode.closest(".form-field")) continue;
+      const b = n.parentNode ? n.parentNode.closest(FIND_BLOCK) : null;
+      if (prev && b !== prev) text += "\n";
+      prev = b;
+      nodes.push(n); starts.push(text.length);
+      text += n.nodeValue;
+    }
+    return { text, nodes, starts };
+  }
+  function findLocate(c, pos, isEnd) {
+    let lo = 0, hi = c.starts.length - 1, ans = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (isEnd ? c.starts[mid] < pos : c.starts[mid] <= pos) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return { node: c.nodes[ans], offset: Math.max(0, Math.min(pos - c.starts[ans], c.nodes[ans].nodeValue.length)) };
+  }
+  function clearFindMarks() {
+    if (FIND_HL) { CSS.highlights.delete("find-all"); CSS.highlights.delete("find-active"); }
+  }
+  // the first match at or after the place where the caret was when the bar was opened
+  function firstMatchFrom(anchor) {
+    if (!anchor) return 0;
+    for (let i = 0; i < fb.matches.length; i++) {
+      try { if (fb.matches[i].compareBoundaryPoints(Range.START_TO_START, anchor) >= 0) return i; } catch (e) { return 0; }
+    }
+    return 0;
+  }
+  function revealRange(r) {
+    const sc = richEditor.closest(".page-scroll");
+    if (!sc) return;
+    const rect = r.getBoundingClientRect(), box = sc.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    if (rect.top < box.top + 70 || rect.bottom > box.bottom - 30) sc.scrollTop += rect.top - box.top - box.height / 3;
+  }
+  function showActive(scroll) {
+    const n = fb.matches.length, q = fb.input.value;
+    fb.count.textContent = q ? (n ? (fb.idx + 1) + " of " + n : "0 of 0") : "";
+    fb.bar.classList.toggle("fb-none", !!q && !n);
+    if (FIND_HL) {
+      if (n) {
+        CSS.highlights.set("find-all", new Highlight(...fb.matches));
+        const cur = new Highlight(fb.matches[fb.idx]);
+        cur.priority = 1;                                  // the current match wins over the yellow one
+        CSS.highlights.set("find-active", cur);
+      } else clearFindMarks();
+    } else if (n && scroll) {                              // browsers without the highlight API: select the match
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(fb.matches[fb.idx]);
+    }
+    if (n && scroll) revealRange(fb.matches[fb.idx]);
+  }
+  function runFind(keepPlace) {
+    if (!fb.open) return;
+    const q = fb.input.value, prevIdx = fb.idx;
+    fb.matches = []; fb.idx = -1;
+    if (q) {
+      const c = findCorpus();
+      if (c.nodes.length) {
+        const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+        let m;
+        while ((m = re.exec(c.text)) !== null && fb.matches.length < 10000) {
+          if (!m[0].length) { re.lastIndex++; continue; }
+          const a = findLocate(c, m.index, false), z = findLocate(c, m.index + m[0].length, true);
+          const r = document.createRange();
+          r.setStart(a.node, a.offset); r.setEnd(z.node, z.offset);
+          fb.matches.push(r);
+        }
+      }
+    }
+    if (fb.matches.length) fb.idx = keepPlace && prevIdx >= 0 ? Math.min(prevIdx, fb.matches.length - 1) : firstMatchFrom(fb.anchor);
+    showActive(!keepPlace);
+  }
+  function stepFind(dir) {
+    if (!fb.open || !fb.matches.length) return;
+    const n = fb.matches.length;
+    fb.idx = (fb.idx + dir + n) % n;
+    showActive(true);
+  }
+  function openFindBar() {
+    if (!needOpenDoc()) return;
+    buildFindBar();
+    if (fb.open) { fb.input.focus(); fb.input.select(); return; }
+    let seed = "";
+    fb.anchor = null;
+    const r = selectionInEditor();
+    if (r) { fb.anchor = r.cloneRange(); const t = r.toString(); if (t && t.length <= 100 && t.indexOf("\n") < 0) seed = t; }
+    else if (savedRange) fb.anchor = savedRange.cloneRange();
+    fb.input.value = seed || lastFind;
+    fb.bar.style.top = (el("editorBody").offsetTop + 6) + "px";
+    fb.bar.classList.remove("hidden");
+    fb.open = true;
+    fb.input.focus(); fb.input.select();
+    runFind(false);
+  }
+  function closeFindBar(refocus) {
+    if (!fb || !fb.bar || !fb.open) return;
+    const cur = fb.idx >= 0 ? fb.matches[fb.idx] : null;
+    fb.open = false; fb.bar.classList.add("hidden");
+    clearTimeout(fb.timer); clearFindMarks(); fb.matches = []; fb.idx = -1;
+    if (refocus && state.currentDoc) {
+      richEditor.focus({ preventScroll: true });
+      if (cur) { try { const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(cur); } catch (e) { /* ignore */ } }
+    }
+  }
+  // Ctrl+F (no argument) opens the bar; Ctrl+G / Ctrl+Shift+G (true = backwards) move between matches
+  function findInDoc(backwards) {
+    if (!needOpenDoc()) return;
+    if (backwards === undefined || !fb.open) { openFindBar(); return; }
+    stepFind(backwards ? -1 : 1);
+  }
+  // edits made while the bar is open: search again (keeping the current match when possible)
+  richEditor.addEventListener("input", () => {
+    if (!fb.open) return;
+    clearTimeout(fb.timer);
+    fb.timer = setTimeout(() => runFind(true), 150);
+  });
+  document.addEventListener("keydown", (e) => {            // Esc while the caret is in the page also closes the bar
+    if (e.key !== "Escape" || !fb.open || e.defaultPrevented) return;
+    const ae = document.activeElement;
+    if (ae && (ae === richEditor || richEditor.contains(ae))) closeFindBar(false);
+  });
 
   /* ---------------- View helpers ---------------- */
   function setMode(editing) {
@@ -5585,7 +5931,7 @@ SOFTWARE.`;
       ["Save", "Ctrl+S"], ["New document", "Ctrl+N"], ["Open document (search)", "Ctrl+O"], ["Print", "Ctrl+P"],
       ["Copy / Cut / Paste", "Ctrl+C / X / V"], ["Paste without formatting", "Ctrl+Shift+V"],
       ["Undo", "Ctrl+Z"], ["Redo", "Ctrl+Y  or  Ctrl+Shift+Z"], ["Insert or edit link", "Ctrl+K"],
-      ["Find", "Ctrl+F"], ["Find next / previous", "Ctrl+G / Ctrl+Shift+G"], ["Find and replace", "Ctrl+H"],
+      ["Find", "Ctrl+F"], ["Find next / previous", "Ctrl+G / Ctrl+Shift+G"], ["Close the find bar", "Esc"], ["Find and replace", "Ctrl+H"],
       ["Select all", "Ctrl+A"], ["Show keyboard shortcuts", "Ctrl+/"], ["Word count", "Ctrl+Shift+C"],
       ["Compact controls (hide toolbar)", "Ctrl+Shift+F"],
     ]],
@@ -5739,7 +6085,7 @@ SOFTWARE.`;
       case "KeyN": stop(); newDocBtn.click(); return;
       case "KeyO": stop(); activeSearch().focus(); showToast("Search a document to open"); return;
       case "KeyP": stop(); if (ready) window.print(); else showToast("Open a document to print"); return;
-      case "KeyF": stop(); if (ready) { lastFind = ""; findInDoc(); } else activeSearch().focus(); return;
+      case "KeyF": stop(); if (ready) findInDoc(); else activeSearch().focus(); return;
       case "KeyH": stop(); if (ready) showFindReplaceDialog(); else showToast("Open a document for find and replace"); return;
       case "KeyG": if (ready) { stop(); findInDoc(false); } return;
       case "KeyK": if (ready) { stop(); insertLink(); } return;
@@ -5844,7 +6190,7 @@ SOFTWARE.`;
       { label: "Select all", key: "Ctrl+A", run: cmd("selectAll") },
       { label: "Delete", run: cmd("delete") },
       "-",
-      { label: "Find", key: "Ctrl+F", run: () => { lastFind = ""; findInDoc(); } },
+      { label: "Find", key: "Ctrl+F", run: () => findInDoc() },
       { label: "Find and replace", key: "Ctrl+H", run: clickId("findBtn") },
       "-",
       { label: "Copy formatting", key: "Ctrl+Alt+C", run: copyFormatting },
@@ -5896,6 +6242,13 @@ SOFTWARE.`;
         { label: "Date", run: () => insertText(fmtDateLong()) },
         { label: "Time", run: () => insertText(fmtTime()) },
         { label: "Date and time", run: () => insertText(fmtDateLong() + ", " + fmtTime()) },
+      ] },
+      "-",
+      { label: "Form field", sub: [
+        { label: "Text field", run: needDoc(() => insertFormField("text")) },
+        { label: "Text area", run: needDoc(() => insertFormField("textarea")) },
+        { label: "Checkbox", run: needDoc(() => insertFormField("check")) },
+        { label: "Dropdown list", run: needDoc(() => insertFormField("select")) },
       ] },
       "-",
       { label: "Bookmark", run: insertBookmark },

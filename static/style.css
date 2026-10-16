@@ -1847,10 +1847,9 @@ body.dragging-docs .coll-chip.coll-out { display: inline-flex; }
 .home-card-date, .home-card-folder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .home-card-folder { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
 .home-card.is-fav .home-card-title::before { content: "★ "; color: #f4b400; }
-.home-card .home-actions {
-  position: absolute; top: 6px; right: 6px; z-index: 3; display: none; padding: 2px 4px; border-radius: 16px;
-  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--elev-1);
-}
+.home-card-sub { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 28px; }
+.home-card-sub .home-card-date { margin-top: 0; min-width: 0; }
+.home-card .home-actions { display: none; padding: 0; margin-right: -4px; background: none; border: 0; box-shadow: none; }
 .home-card:hover .home-actions, .home-card:focus-within .home-actions { display: flex; }
 .home-actions .row-icon-btn.folder-btn { display: none; }
 .home-card:hover .home-actions .row-icon-btn.folder-btn, .home-card:focus-within .home-actions .row-icon-btn.folder-btn,
@@ -1877,3 +1876,62 @@ body.dragging-docs .coll-chip.coll-out { display: inline-flex; }
 }
 .doc-item:hover .doc-item-actions { display: flex; }
 .doc-item.active:hover .doc-item-actions { background: var(--selected); }
+
+
+/* ---------------- Find bar (Ctrl+F) ---------------- */
+.editor-wrap { position: relative; }
+.find-bar {
+  position: absolute; right: 36px; top: 120px; z-index: 60;
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px 6px 4px 14px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-soft); border-radius: 8px;
+  box-shadow: var(--elev-2);
+}
+.find-bar.hidden { display: none; }
+.find-bar .fb-input {
+  width: 190px; border: 0; outline: 0; background: transparent; color: inherit;
+  font: inherit; font-size: 14px; padding: 6px 0;
+}
+.find-bar .fb-count { min-width: 58px; padding: 0 8px; text-align: right; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.find-bar.fb-none .fb-count { color: #d93025; }
+.find-bar .fb-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--border-soft); }
+.find-bar .fb-btn {
+  width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--text); cursor: pointer;
+}
+.find-bar .fb-btn:hover { background: var(--hover); }
+.find-bar .fb-btn svg { width: 22px; height: 22px; fill: currentColor; }
+/* matches: all yellow, the current one orange (CSS Custom Highlight API: nothing is added to the document) */
+::highlight(find-all) { background-color: #ffe14d; color: #000; }
+::highlight(find-active) { background-color: #ff9632; color: #000; }
+
+/* ---------------- Form field placeholders (become fillable boxes in the exported PDF) ---------------- */
+/* sizes match the PDF boxes: 1 pt = 4/3 px (text 150x18 pt, area 300x54 pt, checkbox 12x12 pt, list 120x18 pt) */
+.rich-editor .form-field {
+  display: inline-block; box-sizing: border-box; vertical-align: -4px; max-width: 100%;
+  border: 1px dashed var(--text-muted); border-radius: 2px; background: var(--accent-soft);
+  color: var(--text-muted); font: 11px/1 Arial, sans-serif; text-align: left; text-indent: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  user-select: none; -webkit-user-select: none; cursor: pointer;
+}
+.rich-editor .form-field::before { content: attr(data-name); }
+.rich-editor .form-field[data-ff="text"] { width: 200px; height: 24px; line-height: 22px; padding: 0 6px; }
+.rich-editor .form-field[data-ff="text"]::before { content: "Text field \00b7  " attr(data-name); }
+.rich-editor .form-field[data-ff="textarea"] { width: 400px; height: 72px; padding: 5px 6px; }
+.rich-editor .form-field[data-ff="textarea"]::before { content: "Text area \00b7  " attr(data-name); }
+.rich-editor .form-field[data-ff="check"] { width: 16px; height: 16px; padding: 0; }
+.rich-editor .form-field[data-ff="check"]::before { content: ""; }
+.rich-editor .form-field[data-ff="select"] { position: relative; width: 160px; height: 24px; line-height: 22px; padding: 0 22px 0 6px; }
+.rich-editor .form-field[data-ff="select"]::before { content: "List \00b7  " attr(data-name); }
+.rich-editor .form-field[data-ff="select"]::after {
+  content: ""; position: absolute; right: 6px; top: 9px;
+  border: 4px solid transparent; border-top: 5px solid var(--text-muted); border-bottom: 0;
+}
+.rich-editor .form-field:hover { border-color: var(--text); color: var(--text); }
+
+@media print {
+  .find-bar { display: none !important; }
+  ::highlight(find-all), ::highlight(find-active) { background-color: transparent; }
+}

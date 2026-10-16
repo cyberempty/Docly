@@ -64,8 +64,9 @@ To quit: wait for **Saved** at the top, close the tab, then close the black serv
 | `Ctrl+Z` | Undo |
 | `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
 | `Ctrl+K` | Insert or edit link |
-| `Ctrl+F` | Find |
+| `Ctrl+F` | Find (opens the search bar) |
 | `Ctrl+G` / `Ctrl+Shift+G` | Find next / previous |
+| `Esc` | Close the search bar |
 | `Ctrl+H` | Find and replace |
 | `Ctrl+A` | Select all |
 | `Ctrl+/` | Show keyboard shortcuts |
@@ -144,6 +145,7 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 | Click the circle on a document (home) | Select it; `Ctrl`/`Shift`+click also selects; `Esc` clears the selection |
 | Drop files on the home page | Import them |
 | Click a footnote number | Jump to the note (and back from the note) |
+| Double-click a form field box | Rename it / change the options of a dropdown list |
 | Click a link | Open it in a new tab |
 | Drag across table cells | Select cells |
 | Right-click inside a table | Table menu |
@@ -162,7 +164,7 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 - **File**: New document · Open document · All documents (home) · Make a copy · Download ▸ (Word, OpenDocument, RTF, PDF, TXT, HTML, EPUB, Markdown, Docly backup JSON) · Import… · Save · Rename · Add / remove favorite · Tags… · Move to folder… · Move to trash · Language ▸ · Page setup · Print · Document details · Word count · Show file path
 - **Edit**: Undo · Redo · Cut · Copy · Paste · Paste without formatting · Select all · Delete · Find · Find and replace · Copy formatting · Paste formatting · Clear formatting · Editing preferences ▸ Spelling check
 - **View**: Mode ▸ (Editing, Viewing) · Print layout (pages) · Ruler · Document outline · Non-printing characters · Toolbar · Minimap · Document list · Zoom ▸ (50% – 200%) · Full screen · Light / dark theme
-- **Insert**: Table · Emoji and special characters · Link · Horizontal line · Code block · Checklist · Page break · Footnote · Header & footer… · Page numbers ▸ · Date and time ▸ · Bookmark · Link to heading or bookmark · Table of contents ▸ (insert, update)
+- **Insert**: Table · Emoji and special characters · Link · Horizontal line · Code block · Checklist · Page break · Footnote · Header & footer… · Page numbers ▸ · Date and time ▸ · Form field ▸ (Text field, Text area, Checkbox, Dropdown list) · Bookmark · Link to heading or bookmark · Table of contents ▸ (insert, update)
 - **Format**: Text ▸ · Font ▸ · Font size ▸ · Capitalization ▸ · Page orientation ▸ · Paragraph styles ▸ (Normal, Title, Subtitle, Heading 1–6, Quote) · Align ▸ · Lists ▸ · Indent ▸ · Line spacing ▸ · Paragraph spacing ▸ · Paragraph borders and shading ▸ · Clear formatting
 - **Table**: Insert table · Insert row above / below · Insert column left / right · Delete row / column / table · Merge cells · Split cell · Distribute rows / columns · Cell vertical and content alignment · Cell background color · Border color and width · Column width · Minimum row height · Header row · Table properties
 - **Tools**: Word count · Spelling check · Change case · Text color · Highlight color
@@ -210,12 +212,13 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 - **Links**: to a web page (opens in a new tab), to a heading or to a bookmark; pasting a URL over selected text makes a link.
 - **Bookmarks and table of contents**: insert, update.
 - **Header, footer and page numbers**: Insert ▸ Header & footer… (text for the header and the footer, page numbers in any of the six corners, optionally hidden on the first page). In the text, `{page}`, `{pages}`, `{title}` and `{date}` are replaced automatically. They appear on printed pages, in the PDF and in Word (as real page fields); the editor shows a preview at the top and bottom of the page.
+- **Form fields**: Insert ▸ Form field ▸ **Text field**, **Text area**, **Checkbox** or **Dropdown list**. In the editor a field is a dashed box with a label (a reminder, not writable); it is saved as a normal element of the document, so nothing changes in how documents are stored. Double-click a box to rename it or change the options of a dropdown list. In the exported **PDF** every box becomes a real, clickable form field (see *Save and export*).
 - **Footnotes**: `Ctrl+Alt+F` inserts a numbered reference and a note you type right away. Notes are listed at the end of the document, renumbered automatically when you add, move or delete references.
 - **Other**: horizontal line, code block, emoji and special characters, date and time, page break.
 
 ### Find and replace
 
-`Ctrl+F` finds, `Ctrl+G` / `Ctrl+Shift+G` go to the next / previous match, `Ctrl+H` finds and replaces.
+`Ctrl+F` opens a search bar at the top right of the page (like Google Docs): type and every match is highlighted in **yellow**, the current one in **orange**, with a counter such as *1 of 12*. **Enter** / **Shift+Enter** (or the up / down arrows, or `Ctrl+G` / `Ctrl+Shift+G`) move between matches, **Esc** closes the bar. The search ignores upper / lower case, finds words split by bold or italic, and updates while you edit. If text is selected when you press `Ctrl+F` it is used as the search term. Highlights are only drawn on screen: they are never saved or exported. `Ctrl+H` finds and replaces.
 
 ### View
 
@@ -248,7 +251,7 @@ It is updated a moment after each change and read when Docly starts. Each docume
 
 - **Save**: autosave less than a second after each change, manual `Ctrl+S`, status *Saving… / Saved*, safe atomic writes, warning if you close the tab with unsaved changes.
 - **Download**: Word `.docx`, OpenDocument `.odt`, Rich Text `.rtf`, `.pdf`, plain text `.txt`, web page `.html`, `.epub`, Markdown `.md`, and **Docly backup** `.json`.
-- **PDF**: generated directly in the browser (no print dialog, no browser header or footer). Text stays selectable, links are **blue** and clickable, and header, footer and page numbers are drawn on every page. **Fonts are embedded**: in Chrome or Edge the first export asks permission to read the installed fonts, then Arial, Georgia, Times New Roman, Courier New… are stored in the PDF (TrueType fonts; a missing bold or italic is simulated). Without permission, or in other browsers, the standard PDF fonts are used.
+- **PDF**: generated directly in the browser (no print dialog, no browser header or footer). Text stays selectable, links are **blue** and clickable, and header, footer and page numbers are drawn on every page. **Fonts are embedded**: in Chrome or Edge the first export asks permission to read the installed fonts, then Arial, Georgia, Times New Roman, Courier New… are stored in the PDF (TrueType fonts; a missing bold or italic is simulated). Without permission, or in other browsers, the standard PDF fonts are used. **Fillable forms**: every form field of the document becomes a real PDF form field (AcroForm) placed on the same line of text as in the editor (box with border and white background; text field, multi-line text area, checkbox, dropdown list, each with its name and options). Opened in Chrome, Edge, Adobe Reader or Foxit the boxes are clickable: whoever receives the PDF can type, tick or choose from the list, save with `Ctrl+S` and send it back with the answers included. Fields with the same name get `_2`, `_3`… so every box is independent. The PDF is positioned by Docly's own page layout, so a box is where the text flow puts it, which can differ by a few points from the screen.
 - **Docly backup**: file named `<Document name>_Docly.json` with the whole document (title, content, tags, favorite, page setup, dates).
 - **Import**: Word `.docx`, Markdown `.md`, text `.txt`, web page `.html`, the Docly backup `.json`, and a `.zip` containing any of them (for instance a backup ZIP). Several files can be imported at once. It always creates new documents and never overwrites an existing one.
   - **Word**: paragraphs, headings, bold, italic, underline, strikethrough, colors, highlight, sizes, links, bulleted and numbered lists, tables (with merged cells) and page breaks. Images, headers, footers and footnotes of the Word file are not imported.
@@ -295,6 +298,7 @@ Docly/
 - The `.docx`, `.odt`, `.rtf` and `.epub` exports have not been checked in every program; open them once before sending them.
 - PDF font embedding needs Chrome or Edge and the *local fonts* permission, and works with TrueType fonts (`.ttf`); OpenType/CFF (`.otf`) and font collections (`.ttc`) fall back to the standard PDF fonts.
 - Footnotes are listed at the end of the document, not at the bottom of each page. Headers, footers and page numbers are exported to print, PDF and Word (not to the other formats).
+- Form fields are fillable only in the PDF export. Word, OpenDocument, RTF, Markdown and EPUB show a plain mark (`[ ........ ]`, `[ ]`, `[ v ]`); the web page export uses real HTML controls. Docly stays a word processor: it creates the fields, it does not edit existing PDFs.
 - A folder holds documents of one level only (no folders inside folders).
 - The instant font change applies to the whole document (`Ctrl+A`); a partial selection uses the browser's normal command.
 - Old version still showing? Reload with `Ctrl+F5`. Port 8756 busy? Docly is already running: close the other window.
