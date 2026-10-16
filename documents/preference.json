@@ -1,4 +1,15 @@
 {
-  "version": 1,
-  "folders": []
+  "folders": [],
+  "settings": {
+    "docly-home-view": "grid",
+    "docly-theme-v2": "light",
+    "docly-opened": "{\"9ce31f30-4eee-48b7-9bcc-9cf0271d68c5\":1792145249901,\"1a0ba410-cf8f-42ad-858a-79e17f180ead\":1792145240945,\"fa037073-4703-445a-a84b-ae9955663d64\":1792145245921,\"72b4b844-61db-4087-be9e-2e2a50281f44\":1792147808600,\"dc5bd38a-cc0f-4c71-9ab9-1f1cee5f3e75\":1792169942716}",
+    "docly-recent-colors": "[]",
+    "docly-minimap": "0",
+    "docly-sidebar": "1",
+    "docly-theme": "light",
+    "docly-margins": "{\"l\":\"84px\",\"r\":\"\",\"t\":\"72px\",\"b\":\"\"}",
+    "docly-page": "{}",
+    "docly-ruler": "1"
+  }
 }

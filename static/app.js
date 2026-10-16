@@ -895,6 +895,7 @@
     closeFindBar(false);
     richEditor.innerHTML = (doc.content || "").replace(/ class="cell-sel"/g, "");
     richEditor.querySelectorAll("img").forEach((img) => img.remove());   // images are not supported
+    normalizeLists(richEditor);
     if (window.__doclyAfterOpen) window.__doclyAfterOpen();
     renderHeaderFooter(); applyPrintHF();
 
@@ -1697,11 +1698,58 @@
   richEditor.addEventListener("keyup", syncToolbar);
   richEditor.addEventListener("mouseup", syncToolbar);
 
+  /* ---- Google Docs-style lists: 1. -> a. -> i. (numbers), disc -> circle -> square (bullets) ---- */
+  function listLabel(ordered, level, index) {
+    if (!ordered) return ["\u2022", "\u25E6", "\u25AA"][level % 3];
+    const k = level % 3;
+    if (k === 0) return index + ".";
+    if (k === 1) { let n = index, a = ""; while (n > 0) { n--; a = String.fromCharCode(97 + (n % 26)) + a; n = Math.floor(n / 26); } return a + "."; }
+    const R = [[1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"], [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"]];
+    let n = index, r = "";
+    R.forEach(([v, t]) => { while (n >= v) { r += t; n -= v; } });
+    return r + ".";
+  }
+  // Chrome puts a nested list *next to* the <li>; move it inside the previous <li> (valid HTML, what the exporters expect)
+  function normalizeLists(root) {
+    root.querySelectorAll("ol > ol, ol > ul, ul > ol, ul > ul").forEach((nl) => {
+      const prev = nl.previousElementSibling;
+      if (prev && prev.tagName === "LI") {
+        const last = prev.lastElementChild;
+        if (last && last.tagName === nl.tagName && last.parentNode === prev) { while (nl.firstChild) last.appendChild(nl.firstChild); nl.remove(); }
+        else prev.appendChild(nl);
+      } else {
+        const li = document.createElement("li");
+        li.style.listStyle = "none";
+        nl.parentNode.insertBefore(li, nl);
+        li.appendChild(nl);
+      }
+    });
+  }
+  // Tab / Shift+Tab / Ctrl+] / Ctrl+[ / toolbar buttons: change the list level like Google Docs
+  function indentSelection(outdent) {
+    const sel = window.getSelection();
+    if (outdent && sel && sel.rangeCount) {
+      const n = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+      const li = n && n.closest ? n.closest("li") : null;
+      // top-level list item: Shift+Tab does nothing (Google Docs keeps the item in the list)
+      if (li && li.parentElement && !li.parentElement.closest("li")) return;
+    }
+    document.execCommand(outdent ? "outdent" : "indent");
+    const s2 = window.getSelection();
+    let saved = null;
+    if (s2 && s2.rangeCount) { const r = s2.getRangeAt(0); saved = [r.startContainer, r.startOffset, r.endContainer, r.endOffset]; }
+    normalizeLists(richEditor);
+    if (saved && saved[0].isConnected && saved[2].isConnected) {
+      try { const r = document.createRange(); r.setStart(saved[0], saved[1]); r.setEnd(saved[2], saved[3]); s2.removeAllRanges(); s2.addRange(r); } catch (e) { /* ignore */ }
+    }
+  }
+
   const toolbarCmdButtons = document.querySelectorAll(".tb-btn[data-cmd]");
   toolbarCmdButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       focusRich();
-      document.execCommand(btn.dataset.cmd, false, null);
+      if (btn.dataset.cmd === "indent" || btn.dataset.cmd === "outdent") indentSelection(btn.dataset.cmd === "outdent");
+      else document.execCommand(btn.dataset.cmd, false, null);
       syncToolbar();
       scheduleSave();
     });
@@ -1869,7 +1917,7 @@ ${exportFieldsHtml(false)}
         if (n.nodeType === 1 && (n.tagName === "UL" || n.tagName === "OL")) nested.push(n);
         else text += mdInlineNode(n);
       }
-      lines.push("   ".repeat(depth) + (ordered ? `${i + 1}. ` : "- ") + text.trim().replace(/\n/g, " "));
+      lines.push("   ".repeat(depth) + (ordered ? `${(parseInt(list.getAttribute("start"), 10) || 1) + i}. ` : "- ") + text.trim().replace(/\n/g, " "));
       nested.forEach((nl) => lines.push(mdList(nl, depth + 1)));
     });
     return lines.join("\n");
@@ -2030,7 +2078,7 @@ ${exportFieldsHtml(false)}
       const level = props.list ? props.list.level + 1 : 0;
       Array.from(list.children).filter((c) => c.tagName === "LI").forEach((li, i) => {
         flush();
-        const np = blockProps(li, { ...props, list: { ordered, level, index: i + 1 } });
+        const np = blockProps(li, { ...props, list: { ordered, level, index: (parseInt(list.getAttribute("start"), 10) || 1) + i } });
         walkChildren(li, inheritStyle(li, st), np);
         flush();
       });
@@ -2211,7 +2259,7 @@ ${exportFieldsHtml(false)}
       let prefix = "";
       if (p.list) {
         left += (p.list.level + 1) * 360;
-        const label = p.list.ordered ? `${p.list.index}.` : BULLETS[p.list.level % 3];
+        const label = listLabel(p.list.ordered, p.list.level, p.list.index);
         prefix = `<w:r><w:t xml:space="preserve">${label}</w:t></w:r><w:r><w:tab/></w:r>`;
         ppr += `<w:ind w:left="${left}" w:hanging="360"/>`;
       } else if (left || p.firstLine) {
@@ -2386,7 +2434,7 @@ ${exportFieldsHtml(false)}
       if (p.list) {
         left += (p.list.level + 1) * 360;
         first = -360;
-        const label = p.list.ordered ? `${p.list.index}.` : BULLETS[p.list.level % 3];
+        const label = listLabel(p.list.ordered, p.list.level, p.list.index);
         prefix = `{\\f${fontIdx("Arial")}\\fs28 ${esc(label)}}\\tab `;
       }
       if (left) s += `\\li${left}`;
@@ -2490,7 +2538,7 @@ ${exportFieldsHtml(false)}
     const paraOdt = (p) => {
       let inner = (p.anchors || []).map((id) => `<text:bookmark text:name="${escXml(id)}"/>`).join("");
       if (p.list) {
-        const label = p.list.ordered ? `${p.list.index}.` : BULLETS[p.list.level % 3];
+        const label = listLabel(p.list.ordered, p.list.level, p.list.index);
         inner += `${escXml(label)}<text:tab/>`;
       }
       // headings are not bold in the editor, so switch off LibreOffice's default heading weight
@@ -2961,7 +3009,7 @@ ${exportFieldsHtml(false)}
       const availW = usableW - indent - level * 20 - (p.quote ? 6 : 0);
       let tokens = tokenize(p.runs || [], p, baseSize, availW);
       if (p.list) {
-        const marker = p.list.ordered ? p.list.index + "." : "\u2022";
+        const marker = p.list.ordered ? listLabel(true, p.list.level, p.list.index) : ["\u2022", "o", "-"][p.list.level % 3];
         tokens.unshift({ text: marker, w: foWidth(fontFor("Arial", false, false, false), marker, baseSize), size: baseSize, b: false, i: false, u: false, s: false, color: "", bg: "", link: "", mono: false, marker: true, fo: fontFor("Arial", false, false, false) });
       }
       (p.anchors || []).forEach((id) => tokens.unshift({ anchor: id, text: "", w: 0, size: baseSize }));
@@ -6039,7 +6087,7 @@ SOFTWARE.`;
         if (i >= 0 && cells[i]) placeCaretIn(cells[i], true);
         return;
       }
-      stop(); document.execCommand(e.shiftKey ? "outdent" : "indent"); scheduleSave(); return;
+      stop(); indentSelection(e.shiftKey); scheduleSave(); return;
     }
     if (cellSel && inEd && !mod && (key === "Backspace" || key === "Delete")) {
       stop();
@@ -6093,8 +6141,8 @@ SOFTWARE.`;
       case "Backslash": if (inEd) edit(() => { document.execCommand("removeFormat"); scheduleSave(); syncToolbar(); }); return;
       case "Period": if (inEd) edit(() => { document.execCommand("superscript"); scheduleSave(); syncToolbar(); }); return;
       case "Comma": if (inEd) edit(() => { document.execCommand("subscript"); scheduleSave(); syncToolbar(); }); return;
-      case "BracketRight": if (inEd) edit(() => { document.execCommand("indent"); scheduleSave(); }); return;
-      case "BracketLeft": if (inEd) edit(() => { document.execCommand("outdent"); scheduleSave(); }); return;
+      case "BracketRight": if (inEd) edit(() => { indentSelection(false); scheduleSave(); }); return;
+      case "BracketLeft": if (inEd) edit(() => { indentSelection(true); scheduleSave(); }); return;
       case "Digit1": if (inEd) edit(() => applyLineSpacing("1")); return;
       case "Digit5": if (inEd) edit(() => applyLineSpacing("1.5")); return;
       case "Digit2": if (inEd) edit(() => applyLineSpacing("2")); return;
@@ -6320,8 +6368,8 @@ SOFTWARE.`;
         { label: "Checklist", key: "Ctrl+Shift+9", run: toggleChecklist },
       ] },
       { label: "Indent", sub: [
-        { label: "Increase indent", key: "Ctrl+]", run: sc("indent") },
-        { label: "Decrease indent", key: "Ctrl+[", run: sc("outdent") },
+        { label: "Increase indent", key: "Ctrl+]", run: () => edit(() => { indentSelection(false); scheduleSave(); }) },
+        { label: "Decrease indent", key: "Ctrl+[", run: () => edit(() => { indentSelection(true); scheduleSave(); }) },
       ] },
       { label: "Line spacing", sub: [
         { label: "Single", key: "Ctrl+1", run: () => applyLineSpacing("1") },
