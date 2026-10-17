@@ -1296,9 +1296,11 @@
   });
 
   /* ---------------- Font size (points, like Google Docs) ---------------- */
-  const SIZE_PRESETS = [8, 9, 10, 11, 12, 13, 14, 18, 24, 30, 36, 48, 60, 72, 96];
   const MIN_PT = 1;
-  const MAX_PT = 400;
+  const MAX_MENU_PT = 50;   // dropdown list and +/- buttons: 1..50
+  const MAX_PT = 100;       // custom value (double-click on the size box): up to 100
+  const SIZE_PRESETS = Array.from({ length: MAX_MENU_PT }, (_, i) => i + 1);
+  let customSizeMode = false;
   const sizeMenu = el("sizeMenu");
 
   const fmtPt = (pt) => String(Math.round(pt * 2) / 2);
@@ -1365,15 +1367,10 @@
 
   function stepFontSize(dir) {
     const cur = currentFontSizePt();
-    let next;
-    if (dir > 0) {
-      next = SIZE_PRESETS.find((s) => s > cur + 0.01);
-      if (next === undefined) next = cur + 10;
-    } else {
-      next = [...SIZE_PRESETS].reverse().find((s) => s < cur - 0.01);
-      if (next === undefined) next = cur - 1;
-    }
-    applyFontSize(next);
+    // step by 1pt; stay within 1..50 unless the text already has a custom size above 50
+    const limit = cur > MAX_MENU_PT ? MAX_PT : MAX_MENU_PT;
+    const next = dir > 0 ? Math.floor(cur + 0.01) + 1 : Math.ceil(cur - 0.01) - 1;
+    applyFontSize(Math.min(limit, Math.max(MIN_PT, next)));
   }
 
   function closeSizeMenu() { sizeMenu.classList.add("hidden"); }
@@ -1401,6 +1398,18 @@
   }
 
   sizeMenu.addEventListener("mousedown", (e) => e.preventDefault());
+  // By default the box only opens the list (1-50). Double-click to type a custom value (up to 100).
+  fontSizeInput.readOnly = true;
+  fontSizeInput.title = "Font size (double-click to type a custom size, max 100)";
+  function setCustomSizeMode(on) {
+    customSizeMode = on;
+    fontSizeInput.readOnly = !on;
+  }
+  fontSizeInput.addEventListener("dblclick", () => {
+    setCustomSizeMode(true);
+    closeSizeMenu();
+    fontSizeInput.select();
+  });
   fontSizeInput.addEventListener("focus", () => { fontSizeInput.select(); openSizeMenu(); });
   fontSizeInput.addEventListener("mousedown", () => {
     if (document.activeElement === fontSizeInput && sizeMenu.classList.contains("hidden")) openSizeMenu();
@@ -1410,10 +1419,12 @@
       e.preventDefault();
       const v = parseFloat(fontSizeInput.value.replace(",", "."));
       closeSizeMenu();
-      if (!isNaN(v)) applyFontSize(v); else restoreSelection();
+      if (customSizeMode && !isNaN(v)) applyFontSize(v); else restoreSelection();
+      setCustomSizeMode(false);
     } else if (e.key === "Escape") {
       e.preventDefault();
       closeSizeMenu();
+      setCustomSizeMode(false);
       restoreSelection();
       fontSizeInput.value = fmtPt(currentFontSizePt());
     } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
@@ -1424,6 +1435,7 @@
   });
   fontSizeInput.addEventListener("blur", () => {
     closeSizeMenu();
+    setCustomSizeMode(false);
     fontSizeInput.value = fmtPt(currentFontSizePt());
   });
 
