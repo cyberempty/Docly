@@ -157,11 +157,11 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 - **Toolbar**: Undo, Redo, Print, Zoom, Paragraph style, Font, Font size − / +, Bold, Italic, Underline, Strikethrough, Text color, Highlight, Superscript, Subscript, Change case, Link, Remove link, Table, Horizontal line, Code block, Align (left, center, right, justify), Line spacing, Bulleted list, Numbered list, Decrease / increase indent, Clear formatting, Find and replace.
 - **Top right**: Help, Program info, Light / dark theme.
 - **Home**: search, Create new document, Import, list / grid view, filters **All / Recent / Favorites**, folder tiles (**All documents**, your folders, **New folder**), a 📁 button on every document, and a selection bar (Select all, Move to folder, Take out of folder, Export ZIP, Delete) when documents are selected.
-- **Status bar**: cursor position (line, column), characters, words, current page.
+- **Status bar**: cursor position (line, column), characters, words, current page. It is a small rounded pill (no shadow) floating at the bottom-left (items separated by a dot), with no bar or line across the window. Hovering over (or dragging) the vertical scrollbar shows a small "X of Y" label for the page you are on.
 
 ### Menus
 
-- **File**: New document · Open document · All documents (home) · Make a copy · Download ▸ (Word, OpenDocument, RTF, PDF, TXT, HTML, EPUB, Markdown, Docly backup JSON) · Import… · Save · Rename · Add / remove favorite · Tags… · Move to folder… · Move to trash · Language ▸ · Page setup · Print · Document details · Word count · Show file path
+- **File**: New document · Open document · All documents (home) · Make a copy · Download ▸ (Word, OpenDocument, RTF, PDF, TXT, HTML, EPUB, Markdown, Docly backup JSON) · Import… · Save · Rename · Add / remove favorite · Tags… · Move to folder… · Move to trash · Page setup · Page orientation ▸ (Portrait, Landscape) · Print · Document details · Word count · Show file path
 - **Edit**: Undo · Redo · Cut · Copy · Paste · Paste without formatting · Select all · Delete · Find · Find and replace · Copy formatting · Paste formatting · Clear formatting · Editing preferences ▸ Spelling check
 - **View**: Mode ▸ (Editing, Viewing) · Print layout (pages) · Ruler · Document outline · Non-printing characters · Toolbar · Minimap · Document list · Zoom ▸ (50% – 200%) · Full screen · Light / dark theme
 - **Insert**: Table · Emoji and special characters · Link · Horizontal line · Code block · Checklist · Page break · Footnote · Header & footer… · Page numbers ▸ · Date and time ▸ · Form field ▸ (Text field, Text area, Checkbox, Dropdown list) · Bookmark · Link to heading or bookmark · Table of contents ▸ (insert, update)
@@ -232,7 +232,7 @@ Paper **Letter**, **A4** or **Legal**, portrait or landscape, margins in centime
 
 ### Language and spelling
 
-Document language (English, Italiano, Español, Français, Deutsch, Português) and browser spell check on / off.
+Browser spell check on / off.
 
 ### Preferences file
 

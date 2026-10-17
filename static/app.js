@@ -6028,6 +6028,20 @@ ${exportFieldsHtml(false)}
     return { tops, bottoms };
   }
 
+  // a block with no visible content (empty paragraph, empty bullet): it is moved as a whole with a margin,
+  // because an empty line would otherwise slip beside the "blocker" and leave the caret in the gap
+  function pgIsBlank(u) {
+    if (u.querySelector("img,video,canvas,svg,iframe,input,table,hr,.form-field")) return false;
+    let txt = "";
+    for (const c of u.childNodes) if (!(c.nodeType === 1 && (c.tagName === "UL" || c.tagName === "OL"))) txt += c.textContent;
+    return !txt.replace(/[\s\u200b\u00a0]/g, "");
+  }
+  function pgBaseMargin(u) {
+    const ot = parseFloat(getComputedStyle(u).marginTop) || 0, pv = u.previousElementSibling;
+    const pb = pv ? (parseFloat(getComputedStyle(pv).marginBottom) || 0) : 0;
+    return Math.max(ot, pb);                          // margins of neighbours collapse
+  }
+
   function paginate() {
     if (!state.currentDoc || !richEditor.offsetWidth) return;
     if (!paginated()) { if (pgInfo || pageArea.querySelector(".hf-pg")) pgReset(); return; }
@@ -6056,12 +6070,12 @@ ${exportFieldsHtml(false)}
         continue;
       }
       const checkItem = u.tagName === "LI" && u.parentElement && u.parentElement.classList.contains("checklist");
-      if (u.tagName === "TABLE" || checkItem) {         // moved as a whole (margin)
+      if (u.tagName === "TABLE" || checkItem || pgIsBlank(u)) {   // moved as a whole (margin)
         const eTop = yN + S, eBot = eTop + hN, k = pageOf(eTop + 0.01);
         const must = force >= 0 && eTop < force - 0.5;
         if (must || eTop >= limitOf(k) - 0.5 || (eBot > limitOf(k) + 0.5 && hN <= area)) {
           const s = (must ? force : startOf(k + 1)) - eTop;
-          if (s > 0.5) { writes.push({ el: u, m: (parseFloat(getComputedStyle(u).marginTop) || 0) + s }); S += s; }
+          if (s > 0.5) { writes.push({ el: u, m: pgBaseMargin(u) + s }); S += s; }
         }
         force = -1; endY = Math.max(endY, yN + S + hN);
         continue;
@@ -6177,6 +6191,35 @@ ${exportFieldsHtml(false)}
     if (rc.bottom > box.bottom - 24) pageScroll.scrollTop += rc.bottom - box.bottom + 70;
     else if (rc.top < box.top + 8) pageScroll.scrollTop -= box.top - rc.top + 70;
   }
+
+  /* "Page X of Y" next to the vertical scrollbar, when the pointer is on it (or while dragging it) */
+  const pgTip = document.createElement("div");
+  pgTip.className = "pg-scroll-tip";
+  (document.querySelector(".editor-area") || document.body).appendChild(pgTip);
+  var pgTipOn = false, pgTipDrag = false;
+  const pgInScrollbar = (e) => {
+    const r = pageScroll.getBoundingClientRect(), w = Math.max(pageScroll.offsetWidth - pageScroll.clientWidth, 14);
+    return e.clientX >= r.right - w && e.clientX <= r.right + 1 && e.clientY >= r.top && e.clientY <= r.bottom;
+  };
+  function pgTipShow() {
+    if (!pgInfo || !paginated()) { pgTip.style.display = "none"; return; }
+    const r = pageScroll.getBoundingClientRect(), view = pageScroll.clientHeight, total = pageScroll.scrollHeight;
+    const thumb = Math.max(24, view * view / Math.max(total, 1)), max = Math.max(1, total - view);
+    const cy = Math.min(view - 12, Math.max(12, thumb / 2 + (pageScroll.scrollTop / max) * (view - thumb)));
+    const y = (r.top + view / 2 - richEditor.getBoundingClientRect().top) / zoomNow();
+    const k = Math.max(0, Math.min(pgInfo.pages - 1, Math.floor(y / (pgInfo.H + pgInfo.G))));
+    pgTip.textContent = (k + 1) + " of " + pgInfo.pages;
+    const ea = pgTip.parentElement.getBoundingClientRect();
+    pgTip.style.display = "block";
+    pgTip.style.top = (r.top - ea.top + cy) + "px";
+    pgTip.style.right = (ea.right - r.right + 24) + "px";
+  }
+  const pgTipHide = () => { pgTipOn = false; pgTip.style.display = "none"; };
+  pageScroll.addEventListener("mousemove", (e) => { if (pgInScrollbar(e)) { pgTipOn = true; pgTipShow(); } else if (!pgTipDrag) pgTipHide(); });
+  pageScroll.addEventListener("mouseleave", () => { if (!pgTipDrag) pgTipHide(); });
+  pageScroll.addEventListener("mousedown", (e) => { if (pgInScrollbar(e)) { pgTipDrag = true; pgTipOn = true; pgTipShow(); } });
+  window.addEventListener("mouseup", (e) => { if (pgTipDrag) { pgTipDrag = false; if (!pgInScrollbar(e)) pgTipHide(); } });
+  pageScroll.addEventListener("scroll", () => { if (pgTipOn || pgTipDrag) pgTipShow(); });
 
   // the text re-flows when the window (and so the sheet) changes width or when fonts finish loading
   new ResizeObserver(() => { if (pgInfo && richEditor.offsetWidth !== pgInfo.w) schedulePaginate(); }).observe(richEditor);
@@ -6484,8 +6527,11 @@ SOFTWARE.`;
       { label: "Import…", run: openImportPicker },
       { label: "Move to trash", run: needDoc(() => deleteBtn.click()) },
       "-",
-      { label: "Language", sub: langs.map(([c, n]) => ({ label: n, check: () => richEditor.lang === c, run: () => setLanguage(c, n) })) },
       { label: "Page setup", run: showPageSetup },
+      { label: "Page orientation", sub: [
+        { label: "Portrait", check: () => pageOrient() === "portrait", run: () => setPageOrientation("portrait") },
+        { label: "Landscape", check: () => pageOrient() === "landscape", run: () => setPageOrientation("landscape") },
+      ] },
       { label: "Print", key: "Ctrl+P", run: clickId("printBtn") },
       "-",
       { label: "Document details", run: showDocDetails },

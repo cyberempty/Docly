@@ -1343,17 +1343,23 @@ select:focus-visible,
 
 /* Status bar (like LibreOffice: position, chars, words) */
 .status-bar {
+  /* a small floating pill at the bottom-left: "Ln 1, Col 1 · 0 characters · 0 words · Page 1 of 2" */
+  position: absolute;
+  left: 36px;
+  bottom: 14px;
+  z-index: 6;
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 4px 16px 6px 20px;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
   font-size: 12px;
-  color: var(--text-muted);
-  background: var(--bg);
-  border-top: 1px solid var(--border-soft);
-  flex-shrink: 0;
+  color: var(--text);
+  background: var(--surface);
+  pointer-events: none;
   user-select: none;
 }
+.status-item + .status-item::before { content: "\00b7"; margin-right: 6px; color: var(--text-muted); }
 .status-item { white-space: nowrap; }
 
 @media (max-width: 780px) {
@@ -1981,7 +1987,9 @@ body.dragging-docs .coll-chip.coll-out { display: inline-flex; }
   .page-area:not(.pageless) #richEditor [style*="--pg:"]::before {
     content: ""; float: left; width: 100%; height: var(--pg); shape-outside: var(--pgs); pointer-events: none;
   }
-  .page-area:not(.pageless) #richEditor table[style*="--pgm"] { margin-top: var(--pgm); }
+  .page-area:not(.pageless) #richEditor :is(table,p,h1,h2,h3,h4,h5,h6,blockquote,pre,div)[style*="--pgm"] { margin-top: var(--pgm) !important; }
+  /* code blocks wrap (like in print) so that their lines can move to the next sheet */
+  .page-area:not(.pageless) #richEditor pre { white-space: pre-wrap; overflow: visible; overflow-wrap: anywhere; }
   .page-area:not(.pageless) #richEditor hr.page-break { border: 0; margin: 0; height: 0; }
   .page-area:not(.pageless) > #pageHeader, .page-area:not(.pageless) > #pageFooter { display: none !important; }
 }
@@ -1998,7 +2006,7 @@ body.dragging-docs .coll-chip.coll-out { display: inline-flex; }
 .page-area.pageless > #richEditor { background: var(--page-bg, var(--surface)); }
 @media screen {
   .page-area:not(.pageless) > #richEditor { min-height: var(--pgMin, 1056px) !important; }
-  .page-area:not(.pageless) #richEditor li[style*="--pgm"] { margin-top: var(--pgm); }
+  .page-area:not(.pageless) #richEditor li[style*="--pgm"] { margin-top: var(--pgm) !important; }
 }
 @media print { #richEditor li[style*="--pgm"] { margin-top: 0 !important; } }
 
@@ -2007,3 +2015,12 @@ body.dragging-docs .coll-chip.coll-out { display: inline-flex; }
   :root[data-theme="light"] .page-scroll:has(> .page-area:not(.pageless)) { background: #f1f3f4; }
   :root[data-theme="light"] .page-area:not(.pageless) { --pg-bd: #d5d8dc; }
 }
+
+/* "Page X of Y" label shown next to the vertical scrollbar while the pointer is on it */
+.pg-scroll-tip {
+  position: absolute; z-index: 7; display: none; transform: translateY(-50%);
+  padding: 5px 10px; border-radius: 6px; font-size: 12px; line-height: 1.2; white-space: nowrap;
+  color: #fff; background: #3c4043; pointer-events: none; user-select: none;
+}
+:root[data-theme="dark"] .pg-scroll-tip { color: #1f1f1f; background: #e3e3e3; }
+@media print { .pg-scroll-tip { display: none !important; } }
