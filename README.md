@@ -157,7 +157,7 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 - **Toolbar**: Undo, Redo, Print, Zoom, Paragraph style, Font, Font size − / +, Bold, Italic, Underline, Strikethrough, Text color, Highlight, Superscript, Subscript, Change case, Link, Remove link, Table, Horizontal line, Code block, Align (left, center, right, justify), Line spacing, Bulleted list, Numbered list, Decrease / increase indent, Clear formatting, Find and replace.
 - **Top right**: Help, Program info, Light / dark theme.
 - **Home**: search, Create new document, Import, list / grid view, filters **All / Recent / Favorites**, folder tiles (**All documents**, your folders, **New folder**), a 📁 button on every document, and a selection bar (Select all, Move to folder, Take out of folder, Export ZIP, Delete) when documents are selected.
-- **Status bar**: cursor position (line, column), characters, words.
+- **Status bar**: cursor position (line, column), characters, words, current page.
 
 ### Menus
 
@@ -222,7 +222,7 @@ While you type in a text field (search, dialogs) the editor shortcuts are disabl
 
 ### View
 
-- **Print layout** (pages) or continuous page, ruler showing page, margins and indent markers, **document outline** (headings), **minimap** (off by default), non-printing characters, zoom 50–200%, full screen, hide the toolbar, document list on the left.
+- **Print layout** (pages): the document is shown as separate sheets with a gap between them, like Google Docs. Text that does not fit at the bottom of a sheet continues on the next one, headings are kept with the text that follows, single lines are not left alone, and header, footer and page numbers appear on every sheet. A **Page X of Y** indicator is in the status bar. Or continuous page, ruler showing page, margins and indent markers, **document outline** (headings), **minimap** (off by default), non-printing characters, zoom 50–200%, full screen, hide the toolbar, document list on the left.
 - **Modes**: *Editing* or *Viewing* (read only).
 - **Theme**: light or dark. Theme, language, ruler, minimap, toolbar, margins, page setup and recent colors are saved in `documents/preference.json`, next to your documents (see *Settings* below).
 
@@ -297,7 +297,7 @@ Docly/
 - Page size, orientation, color and margins apply to every document, not to a single one.
 - The `.docx`, `.odt`, `.rtf` and `.epub` exports have not been checked in every program; open them once before sending them.
 - PDF font embedding needs Chrome or Edge and the *local fonts* permission, and works with TrueType fonts (`.ttf`); OpenType/CFF (`.otf`) and font collections (`.ttc`) fall back to the standard PDF fonts.
-- Footnotes are listed at the end of the document, not at the bottom of each page. Headers, footers and page numbers are exported to print, PDF and Word (not to the other formats).
+- Footnotes are listed at the end of the document, not at the bottom of each page. A table taller than one sheet is not split between sheets (a table that fits is moved whole to the next sheet). Headers, footers and page numbers are exported to print, PDF and Word (not to the other formats).
 - Form fields are fillable only in the PDF export. Word, OpenDocument, RTF, Markdown and EPUB show a plain mark (`[ ........ ]`, `[ ]`, `[ v ]`); the web page export uses real HTML controls. Docly stays a word processor: it creates the fields, it does not edit existing PDFs.
 - A folder holds documents of one level only (no folders inside folders).
 - The instant font change applies to the whole document (`Ctrl+A`); a partial selection uses the browser's normal command.

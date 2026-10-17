@@ -1956,3 +1956,54 @@ body.dragging-docs .coll-chip.coll-out { display: inline-flex; }
   .find-bar { display: none !important; }
   ::highlight(find-all), ::highlight(find-active) { background-color: transparent; }
 }
+
+
+/* =====================================================================
+   PAGES (print layout): the document is drawn as separate sheets with a
+   gap between them, like Google Docs. Text that does not fit at the bottom
+   of a sheet moves to the next one (see "Pagination" in app.js).
+   ===================================================================== */
+@media screen {
+  .page-area:not(.pageless) { --pgH: 1056px; --pgG: 20px; --pg-bd: var(--border-soft); --page-bg: var(--surface); }
+  .page-area:not(.pageless) > #richEditor {
+    border: 0;
+    background-color: transparent;
+    background-image:
+      linear-gradient(to bottom, var(--pg-bd) 0 var(--pgH), transparent var(--pgH) 100%),
+      linear-gradient(to bottom, var(--pg-bd) 0 var(--pgH), transparent var(--pgH) 100%),
+      linear-gradient(to bottom, var(--pg-bd) 0 1px, var(--page-bg) 1px calc(var(--pgH) - 1px), var(--pg-bd) calc(var(--pgH) - 1px) var(--pgH), transparent var(--pgH) 100%);
+    background-size: 1px calc(var(--pgH) + var(--pgG)), 1px calc(var(--pgH) + var(--pgG)), 100% calc(var(--pgH) + var(--pgG));
+    background-position: 0 0, 100% 0, 0 0;
+    background-repeat: repeat-y;
+  }
+  /* a block that starts on a new sheet, or is cut by the end of a sheet: a float with a "shape" that only
+     blocks the band between the bottom margin and the top of the next sheet, so lines above it stay put */
+  .page-area:not(.pageless) #richEditor [style*="--pg:"]::before {
+    content: ""; float: left; width: 100%; height: var(--pg); shape-outside: var(--pgs); pointer-events: none;
+  }
+  .page-area:not(.pageless) #richEditor table[style*="--pgm"] { margin-top: var(--pgm); }
+  .page-area:not(.pageless) #richEditor hr.page-break { border: 0; margin: 0; height: 0; }
+  .page-area:not(.pageless) > #pageHeader, .page-area:not(.pageless) > #pageFooter { display: none !important; }
+}
+.page-area.pageless .hf-pg { display: none !important; }
+.hf-pg { position: absolute; left: 0; right: 0; display: grid; }
+@media print {
+  #richEditor { background-image: none !important; }
+  #richEditor [style*="--pg:"]::before { display: none !important; }
+  #richEditor table[style*="--pgm"] { margin-top: 12px !important; }
+  .hf-pg { display: none !important; }
+}
+
+/* page colour in the continuous view, and list items moved as a whole */
+.page-area.pageless > #richEditor { background: var(--page-bg, var(--surface)); }
+@media screen {
+  .page-area:not(.pageless) > #richEditor { min-height: var(--pgMin, 1056px) !important; }
+  .page-area:not(.pageless) #richEditor li[style*="--pgm"] { margin-top: var(--pgm); }
+}
+@media print { #richEditor li[style*="--pgm"] { margin-top: 0 !important; } }
+
+/* light theme: a soft grey around the sheets so each page stands out (the dark theme already has contrast) */
+@media screen {
+  :root[data-theme="light"] .page-scroll:has(> .page-area:not(.pageless)) { background: #f1f3f4; }
+  :root[data-theme="light"] .page-area:not(.pageless) { --pg-bd: #d5d8dc; }
+}

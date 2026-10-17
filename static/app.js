@@ -748,8 +748,10 @@
       node.style.paddingLeft = cs.paddingLeft; node.style.paddingRight = cs.paddingRight;
       if (kind === "top") node.style.top = Math.max(4, mTop / 2 - 6) + "px"; else node.style.bottom = Math.max(4, mBot / 2 - 6) + "px";
     });
+    pgHFSig = ""; if (typeof pgBuildHF === "function") { pgBuildHF(); schedulePaginate(); }
   }
 
+  // (one header / footer per sheet is drawn by pgBuildHF)
   // Printing: page-margin boxes (Chrome / Edge) carry the header, footer and page numbers on every printed page
   function applyPrintHF() {
     let st = document.getElementById("hfPrintStyle");
@@ -1247,7 +1249,7 @@
   const activeSearch = () => (appEl.classList.contains("home-mode") ? homeSearchInput : searchInput);
 
   function focusRich() { richEditor.focus(); }
-  const contentHtml = () => richEditor.innerHTML.replace(/ class="cell-sel"/g, "");
+  const contentHtml = () => richEditor.innerHTML.replace(/ class="cell-sel"/g, "").replace(/\s*--pg[sm]?:[^;"]*;?/g, "").replace(/ style="\s*"/g, "");
 
   /* ---------------- Selection helpers ---------------- */
   let savedRange = null;
@@ -3893,7 +3895,7 @@ ${exportFieldsHtml(false)}
     const cs = window.getComputedStyle(richEditor);
     return {
       W: richEditor.offsetWidth,
-      H: richEditor.offsetHeight,
+      H: (paginated() && pgInfo) ? pgInfo.H : richEditor.offsetHeight,
       bl: richEditor.clientLeft,
       bt: richEditor.clientTop,
       l: parseFloat(cs.paddingLeft) || 0,
@@ -5726,6 +5728,7 @@ ${exportFieldsHtml(false)}
   function togglePageless() {
     pageArea.classList.toggle("pageless");
     LS.set("docly-pageless", pageArea.classList.contains("pageless") ? "1" : "0");
+    if (pageArea.classList.contains("pageless")) pgReset(); else schedulePaginate();
     rafRender(); mmRefresh();
   }
   function toggleNonPrinting() {
@@ -5837,8 +5840,9 @@ ${exportFieldsHtml(false)}
     if (cur.orient === "landscape") [w, h] = [h, w];
     pageArea.style.width = Math.round(w * 96) + "px";
     richEditor.style.minHeight = Math.round(h * 96) + "px";
-    if (cur.color && cur.color.toLowerCase() !== "#ffffff") richEditor.style.background = cur.color; else richEditor.style.background = "";
+    if (cur.color && cur.color.toLowerCase() !== "#ffffff") pageArea.style.setProperty("--page-bg", cur.color); else pageArea.style.removeProperty("--page-bg");
     if (typeof renderHeaderFooter === "function") { renderHeaderFooter(); applyPrintHF(); }
+    schedulePaginate();
   }
   window.__pagePaper = () => {
     const cur = JSON.parse(LS.get("docly-page", "{}"));
@@ -5929,7 +5933,256 @@ ${exportFieldsHtml(false)}
   new ResizeObserver(() => { if (mmOn) mmRefresh(); }).observe(richEditor);
   new ResizeObserver(() => mmSync()).observe(minimap);
   richEditor.addEventListener("input", () => { mmRefresh(); clearTimeout(outlineTimer); outlineTimer = setTimeout(renderOutline, 400); });
-  window.__doclyAfterOpen = () => { clearCellSel(); applyPage(); mmRefresh(); renderOutline(); setTimeout(mmRefresh, 60); };
+  /* =====================================================================
+     PAGINATION (print layout): the document is shown as separate sheets with a gap
+     between them, like Google Docs.
+
+     The text stays ONE editable element (so typing, undo, find, tables... keep working).
+     After every change we measure the blocks and, where a sheet ends, push the next lines
+     to the top of the following sheet. The push is a temporary CSS custom property
+     (--pg / --pgs / --pgm) on the block: it is never saved (see contentHtml) and is
+     recomputed from scratch on every pass.
+     ===================================================================== */
+  var PG_GAP = 20;                                  // space between two sheets (px)
+  var pgFrame = 0, pgBusy = false, pgTyped = false, pgInfo = null, pgHFSig = "";
+  const pgObs = new MutationObserver((recs) => {
+    if (pgBusy) return;
+    if (recs.every((m) => m.type === "attributes" && m.attributeName === "class" && m.target.matches && m.target.matches("td,th"))) return;
+    schedulePaginate();
+  });
+  pgObs.observe(richEditor, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
+  richEditor.addEventListener("input", () => { pgTyped = true; });
+
+  function paginated() { return !!state.currentDoc && !pageArea.classList.contains("pageless"); }
+  function schedulePaginate() {
+    if (pgFrame) return;
+    pgFrame = setTimeout(() => { pgFrame = 0; paginate(); }, 30);
+  }
+  const pgUnmark = (n) => {
+    n.style.removeProperty("--pg"); n.style.removeProperty("--pgs"); n.style.removeProperty("--pgm");
+    if (!n.getAttribute("style")) n.removeAttribute("style");
+  };
+  function pgReset() {
+    pgBusy = true;
+    richEditor.querySelectorAll('[style*="--pg"]').forEach(pgUnmark);
+    pageArea.querySelectorAll(".hf-pg").forEach((n) => n.remove());
+    pageArea.style.removeProperty("--pgMin");
+    pgHFSig = ""; pgInfo = null;
+    pgObs.takeRecords(); pgBusy = false;
+    const sp = el("statusPage"); if (sp) sp.style.display = "none";
+  }
+  function pgGeom() {
+    let cur = {}; try { cur = JSON.parse(LS.get("docly-page", "{}") || "{}"); } catch (e) { /* ignore */ }
+    let [w, h] = PAPER_IN[cur.size || "letter"] || PAPER_IN.letter;
+    if (cur.orient === "landscape") [w, h] = [h, w];
+    const cs = getComputedStyle(richEditor);
+    return { H: Math.round(h * 96), mt: parseFloat(cs.paddingTop) || 0, mb: parseFloat(cs.paddingBottom) || 0 };
+  }
+
+  // The blocks that can be moved from one sheet to the next, in document order.
+  const PG_BLOCKS = /^(P|H[1-6]|BLOCKQUOTE|PRE|UL|OL|LI|DIV|TABLE|HR)$/;
+  function pgUnits(parent, out) {
+    for (const c of parent.children) {
+      const t = c.tagName;
+      if (t === "UL" || t === "OL") { pgUnits(c, out); continue; }
+      if (t === "LI") { out.push(c); for (const s of c.children) if (s.tagName === "UL" || s.tagName === "OL") pgUnits(s, out); continue; }
+      if (t === "HR") { if (c.classList.contains("page-break")) out.push(c); continue; }
+      if (t === "TABLE") { out.push(c); continue; }
+      if ((t === "BLOCKQUOTE" || t === "DIV") && !c.matches(".toc") && Array.from(c.children).some((x) => PG_BLOCKS.test(x.tagName))) { pgUnits(c, out); continue; }
+      out.push(c);
+    }
+  }
+  // Line boxes of a block (own text only, not nested lists), in the editor's own pixels.
+  function pgLineBoxes(u, z, edTop) {
+    const r = u.getBoundingClientRect(), cs = getComputedStyle(u);
+    const cTop = (r.top - edTop) / z + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0);
+    let cBot = (r.bottom - edTop) / z - (parseFloat(cs.paddingBottom) || 0) - (parseFloat(cs.borderBottomWidth) || 0);
+    const rects = [], rg = document.createRange();
+    const walk = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) {
+          if (!c.nodeValue) continue;
+          rg.selectNodeContents(c);
+          for (const q of rg.getClientRects()) if (q.height > 0) rects.push({ t: (q.top - edTop) / z, b: (q.bottom - edTop) / z });
+        } else if (c.nodeType === 1 && c.tagName !== "UL" && c.tagName !== "OL" && c.tagName !== "TABLE") walk(c);
+      }
+    };
+    walk(u);
+    if (u.tagName === "LI" && Array.from(u.children).some((x) => x.tagName === "UL" || x.tagName === "OL")) {
+      const last = rects.length ? Math.max(...rects.map((q) => q.b)) : cTop + 20;
+      cBot = Math.min(cBot, last + 2);
+    }
+    if (!rects.length) return { tops: [cTop], bottoms: [Math.max(cBot, cTop + 1)] };
+    rects.sort((a, b) => a.t - b.t || a.b - b.b);
+    const lines = [];
+    for (const q of rects) {
+      const l = lines[lines.length - 1];
+      if (l && q.t < (l.t + l.b) / 2) { l.t = Math.min(l.t, q.t); l.b = Math.max(l.b, q.b); } else lines.push({ t: q.t, b: q.b });
+    }
+    const tops = [cTop], bottoms = [];
+    for (let i = 1; i < lines.length; i++) {
+      const b = Math.min(Math.max((lines[i - 1].b + lines[i].t) / 2, tops[i - 1] + 1), cBot);
+      bottoms.push(b); tops.push(b);
+    }
+    bottoms.push(Math.max(cBot, tops[tops.length - 1] + 1));
+    return { tops, bottoms };
+  }
+
+  function paginate() {
+    if (!state.currentDoc || !richEditor.offsetWidth) return;
+    if (!paginated()) { if (pgInfo || pageArea.querySelector(".hf-pg")) pgReset(); return; }
+    pgBusy = true;
+    try { pgRun(); } catch (e) { console.error("pagination", e); } finally { pgObs.takeRecords(); pgBusy = false; }
+    pgKeepCaret();
+    pgUpdateIndicator();
+  }
+
+  function pgRun() {
+    const z = zoomNow(), st = pageScroll.scrollTop;
+    richEditor.querySelectorAll('[style*="--pg"]').forEach(pgUnmark);       // start from the natural layout
+    const g = pgGeom(), H = g.H, P = H + PG_GAP, area = H - g.mt - g.mb;
+    const edTop = richEditor.getBoundingClientRect().top;
+    const units = []; pgUnits(richEditor, units);
+    const limitOf = (k) => k * P + H - g.mb, startOf = (k) => k * P + g.mt;
+    const pageOf = (y) => Math.max(0, Math.floor(y / P));
+    let S = 0, force = -1, endY = g.mt;                 // S = how far everything below has been pushed so far
+    const writes = [];
+
+    for (const u of units) {
+      const r = u.getBoundingClientRect();
+      const yN = (r.top - edTop) / z, hN = r.height / z;
+      if (u.tagName === "HR") {                         // page break: what follows starts on the next sheet
+        force = startOf(pageOf(yN + S + 0.01) + 1);
+        continue;
+      }
+      const checkItem = u.tagName === "LI" && u.parentElement && u.parentElement.classList.contains("checklist");
+      if (u.tagName === "TABLE" || checkItem) {         // moved as a whole (margin)
+        const eTop = yN + S, eBot = eTop + hN, k = pageOf(eTop + 0.01);
+        const must = force >= 0 && eTop < force - 0.5;
+        if (must || eTop >= limitOf(k) - 0.5 || (eBot > limitOf(k) + 0.5 && hN <= area)) {
+          const s = (must ? force : startOf(k + 1)) - eTop;
+          if (s > 0.5) { writes.push({ el: u, m: (parseFloat(getComputedStyle(u).marginTop) || 0) + s }); S += s; }
+        }
+        force = -1; endY = Math.max(endY, yN + S + hN);
+        continue;
+      }
+      let L = null;
+      const hasSub = u.tagName === "LI" && Array.from(u.children).some((x) => x.tagName === "UL" || x.tagName === "OL");
+      if (hasSub) L = pgLineBoxes(u, z, edTop);
+      const eTop = yN + S, eBot = hasSub ? L.bottoms[L.bottoms.length - 1] + S : eTop + hN;
+      const isHead = /^H[1-6]$/.test(u.tagName), k0 = pageOf(eTop + 0.01);
+      const must = force >= 0 && eTop < force - 0.5;
+      if (!must && eBot + (isHead ? 40 : 0) <= limitOf(k0) + 0.5 && eTop < limitOf(k0) - 0.5) {
+        force = -1; endY = Math.max(endY, yN + S + hN); continue;
+      }
+      L = L || pgLineBoxes(u, z, edTop);
+      const n = L.tops.length, base = L.tops[0] + S;
+      let cur = S, i = 0; const bands = [];
+      while (i < n) {
+        const lt = L.tops[i] + cur, lb = L.bottoms[i] + cur, k = pageOf(lt + 0.01);
+        let tgt = -1, forced = false;
+        if (i === 0 && must && bands.length === 0 && lt < force - 0.5) { tgt = force; forced = true; }
+        else if ((lb + (isHead && i === n - 1 ? 40 : 0) > limitOf(k) + 0.5 || lt >= limitOf(k) - 0.5) && lt - startOf(k) > 1) tgt = startOf(k + 1);
+        if (tgt < 0) { i++; continue; }
+        if (!forced) {                                   // widow / orphan control: never leave one line alone
+          if (i === n - 1 && n >= 3) i = n - 2;
+          if (i === 1 && bands.length === 0 && n >= 3) i = 0;
+        }
+        const t2 = L.tops[i] + cur;
+        const Y = i === 0 ? 0 : Math.max(0, t2 - base + 1), F = tgt - base;
+        bands.push([Y, F]);
+        cur += tgt - t2;
+        i++;
+      }
+      if (bands.length) {
+        const pts = bands.map(([y, f]) => "0 " + y.toFixed(2) + "px,100% " + y.toFixed(2) + "px,100% " + f.toFixed(2) + "px,0 " + f.toFixed(2) + "px").join(",");
+        writes.push({ el: u, pg: bands[bands.length - 1][1], pgs: "polygon(" + pts + ")" });
+      }
+      S = cur; force = -1;
+      endY = Math.max(endY, yN + S + hN);
+    }
+
+    writes.forEach((w) => {
+      if (w.m != null) w.el.style.setProperty("--pgm", w.m.toFixed(2) + "px");
+      else { w.el.style.setProperty("--pg", w.pg.toFixed(2) + "px"); w.el.style.setProperty("--pgs", w.pgs); }
+    });
+
+    const N = Math.max(1, pageOf(Math.max(endY, g.mt + 1) - 0.5) + 1);
+    const setVar = (k, v) => { if (pageArea.style.getPropertyValue(k) !== v) pageArea.style.setProperty(k, v); };
+    setVar("--pgH", H + "px"); setVar("--pgG", PG_GAP + "px"); setVar("--pgMin", (N * H + (N - 1) * PG_GAP) + "px");
+    pgInfo = { pages: N, H, G: PG_GAP, mt: g.mt, mb: g.mb, w: richEditor.offsetWidth };
+    pgBuildHF();
+    pageScroll.scrollTop = st;
+  }
+
+  // header / footer / page number on every sheet
+  function pgBuildHF() {
+    if (!pgInfo || !paginated()) return;
+    const top = hfSegments("top"), bot = hfSegments("bottom"), L = docLayout(), cs = getComputedStyle(richEditor);
+    const { H, G, pages, mt, mb } = pgInfo;
+    const sig = JSON.stringify([top, bot, L.skipFirst, pages, H, mt, mb, cs.paddingLeft, cs.paddingRight]);
+    if (sig === pgHFSig && pageArea.querySelector(".hf-pg") !== null || (sig === pgHFSig && hfEmpty(top) && hfEmpty(bot))) return;
+    pgHFSig = sig;
+    pageArea.querySelectorAll(".hf-pg").forEach((n) => n.remove());
+    const mk = (segs, k, y) => {
+      if (hfEmpty(segs)) return;
+      const d = document.createElement("div");
+      d.className = "hf-overlay on hf-pg"; d.setAttribute("aria-hidden", "true");
+      d.innerHTML = '<span class="hf-l"></span><span class="hf-c"></span><span class="hf-r"></span>';
+      ["l", "c", "r"].forEach((q) => { d.querySelector(".hf-" + q).textContent = hfText(segs[q], k + 1, pages); });
+      d.style.top = y + "px"; d.style.paddingLeft = cs.paddingLeft; d.style.paddingRight = cs.paddingRight;
+      pageArea.appendChild(d);
+    };
+    for (let k = 0; k < pages; k++) {
+      if (k === 0 && L.skipFirst) continue;
+      mk(top, k, k * (H + G) + Math.max(4, mt / 2 - 6));
+      mk(bot, k, k * (H + G) + H - Math.max(4, mb / 2 - 6) - 12);
+    }
+  }
+
+  // "Page 2 of 5" in the status bar
+  function pgUpdateIndicator() {
+    const sp = el("statusPage");
+    if (!sp) return;
+    if (!pgInfo || !paginated()) { sp.style.display = "none"; return; }
+    let k = 0;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && richEditor.contains(sel.getRangeAt(0).startContainer)) {
+      const rg = sel.getRangeAt(0);
+      let rc = rg.getClientRects()[0];
+      if (!rc || !rc.height) { const e = rg.startContainer.nodeType === 1 ? rg.startContainer : rg.startContainer.parentElement; rc = e && e.getBoundingClientRect(); }
+      if (rc) k = Math.max(0, Math.min(pgInfo.pages - 1, Math.floor((((rc.top - richEditor.getBoundingClientRect().top) / zoomNow()) + 2) / (pgInfo.H + pgInfo.G))));
+    }
+    sp.style.display = "";
+    sp.textContent = "Page " + (k + 1) + " of " + pgInfo.pages;
+  }
+  var pgSelFrame = 0;
+  document.addEventListener("selectionchange", () => {
+    if (pgSelFrame) return;
+    pgSelFrame = requestAnimationFrame(() => { pgSelFrame = 0; if (pgInfo) pgUpdateIndicator(); });
+  });
+
+  // after typing, a line that jumped to the next sheet must not leave the caret out of sight
+  function pgKeepCaret() {
+    if (!pgTyped) return;
+    pgTyped = false;
+    if (document.activeElement !== richEditor) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed || !richEditor.contains(sel.anchorNode)) return;
+    const rg = sel.getRangeAt(0);
+    let rc = rg.getClientRects()[0];
+    if (!rc || !rc.height) { const e = rg.startContainer.nodeType === 1 ? rg.startContainer : rg.startContainer.parentElement; rc = e && e.getBoundingClientRect(); }
+    if (!rc) return;
+    const box = pageScroll.getBoundingClientRect();
+    if (rc.bottom > box.bottom - 24) pageScroll.scrollTop += rc.bottom - box.bottom + 70;
+    else if (rc.top < box.top + 8) pageScroll.scrollTop -= box.top - rc.top + 70;
+  }
+
+  // the text re-flows when the window (and so the sheet) changes width or when fonts finish loading
+  new ResizeObserver(() => { if (pgInfo && richEditor.offsetWidth !== pgInfo.w) schedulePaginate(); }).observe(richEditor);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedulePaginate);
+
+  window.__doclyAfterOpen = () => { clearCellSel(); applyPage(); mmRefresh(); renderOutline(); setTimeout(mmRefresh, 60); setTimeout(schedulePaginate, 80); };
   applyPage();
   if (LS.get("docly-mode", "edit") === "view") { richEditor.contentEditable = "false"; document.body.classList.add("viewing"); }
 
