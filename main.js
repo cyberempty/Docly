@@ -31,7 +31,6 @@ const PAGE_NUMBERS = new Set(["none", "top-left", "top-center", "top-right", "bo
 app.setName("Docly");
 if (process.platform === "win32") app.setAppUserModelId("Docly");
 if (process.platform === "linux") app.commandLine.appendSwitch("no-sandbox");   // the downloaded engine has no SUID helper
-try { app.setPath("userData", path.join(BASE_DIR, ".userdata")); } catch (_) { /* keep default */ }
 
 /* ---------------- Helpers (same rules as the former server.py) ---------------- */
 function nowIso() { return new Date().toISOString().slice(0, 19) + "+00:00"; }
@@ -487,7 +486,7 @@ const DEFAULT_SIZE = { width: 1280, height: 820 };
 
 function restoredBounds() {
   const w = (readJson(PREFS_FILE) || {}).window;
-  const out = { ...DEFAULT_SIZE, maximized: false, fullscreen: false };
+  const out = { ...DEFAULT_SIZE, maximized: true, fullscreen: false };   // first start: maximized window
   if (!isObj(w)) return out;
   const num = (v) => typeof v === "number" && Number.isFinite(v);
   if (num(w.width) && num(w.height) && w.width >= 600 && w.height >= 400) { out.width = Math.round(w.width); out.height = Math.round(w.height); }
@@ -498,7 +497,7 @@ function restoredBounds() {
     });
     if (visible) { out.x = Math.round(w.x); out.y = Math.round(w.y); }
   }
-  out.maximized = w.maximized === true;
+  out.maximized = typeof w.maximized === "boolean" ? w.maximized : true;
   out.fullscreen = w.fullscreen === true;
   return out;
 }
@@ -526,6 +525,9 @@ function openExternal(u) {
 
 function createWindow() {
   const st = restoredBounds();
+  if (!isObj((readJson(PREFS_FILE) || {}).window)) {      // first start: write the default window state into preference.json
+    saveWindowState({ width: st.width, height: st.height, maximized: true, fullscreen: false });
+  }
   const settings = loadSettings() || {};
   const dark = settings["docly-theme-v2"] === "dark" || settings["docly-theme"] === "dark";
   const win = new BrowserWindow({

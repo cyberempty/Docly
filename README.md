@@ -30,7 +30,7 @@ The same code (`main.js` + `static/`) runs on all three systems; only the launch
 
 Everything stays inside the Docly folder (documents and preferences), so you can copy it, `runtime/` included, to a USB stick or another computer of the same system and find everything as you left it. See *Portability*.
 
-To quit: close the window (the last change is saved a moment after you type; wait for **Saved** at the top). Docly remembers the window size, position, maximized and full-screen state, and a second launch just brings the open window to the front. `F11` toggles full screen (Windows and Linux).
+To quit: close the window (the last change is saved a moment after you type; wait for **Saved** at the top). Docly opens maximized the first time and then remembers the window size, position, maximized and full-screen state, and a second launch just brings the open window to the front. `F11` toggles full screen (Windows and Linux).
 
 ### First steps
 

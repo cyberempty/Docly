@@ -1317,26 +1317,6 @@ select:focus-visible,
 }
 .home-row .home-actions { justify-content: flex-end; }
 
-/* Home footer (Crypton signature) */
-.home-footer {
-  flex-shrink: 0;
-  margin: 0;
-  padding: 10px 16px 12px;
-  border: 0;               /* no separator line */
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
-  background: var(--surface);
-}
-.home-footer p { margin: 0; }
-.crypton-link {
-  font-weight: 700;
-  font-style: normal;
-  color: var(--text);
-  text-decoration: none;
-}
-.crypton-link:hover { text-decoration: underline; }
-
 /* Status bar (like LibreOffice: position, chars, words) */
 .status-bar {
   /* a small floating pill at the bottom-left: "Ln 1, Col 1 · 0 characters · 0 words · Page 1 of 2" */
