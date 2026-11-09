@@ -1,0 +1,10 @@
+{
+  "name": "docly",
+  "productName": "Docly",
+  "version": "1.0.0",
+  "description": "Docly - a private, offline document editor for your desktop. Your documents stay in a folder next to the app.",
+  "main": "main.js",
+  "private": true,
+  "license": "MIT",
+  "author": "𝙚𝙢𝙥𝙩𝙮"
+}
